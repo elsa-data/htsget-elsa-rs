@@ -1,12 +1,12 @@
-use std::sync::Arc;
 use htsget_config::config::cors::CorsConfig;
 use htsget_config::config::parser::from_path;
 use htsget_config::config::ServiceInfo;
+use std::sync::Arc;
 
 use lambda_http::Error;
 
-use htsget_lambda::Config;
 use htsget_elsa_lambda::handle_request;
+use htsget_lambda::Config;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {

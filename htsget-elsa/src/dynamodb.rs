@@ -5,7 +5,7 @@ use aws_sdk_dynamodb::Client;
 #[derive(Debug)]
 pub struct DynamoDBCache {
     client: Client,
-    table_name: String
+    table_name: String,
 }
 
 impl DynamoDBCache {

@@ -1,9 +1,9 @@
-pub mod elsa_endpoint;
 pub mod dynamodb;
+pub mod elsa_endpoint;
 
-use std::str::FromStr;
 use async_trait::async_trait;
 use htsget_config::resolver::Resolver;
+use std::str::FromStr;
 
 #[async_trait]
 pub trait Cache {

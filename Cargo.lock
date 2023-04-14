@@ -1232,6 +1232,7 @@ dependencies = [
  "htsget-config",
  "http",
  "reqwest",
+ "serde",
  "thiserror",
 ]
 

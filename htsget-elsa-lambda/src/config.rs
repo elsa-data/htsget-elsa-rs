@@ -1,9 +1,9 @@
-use std::io;
-use std::path::Path;
-use htsget_config::config::Config as HtsGetConfig;
 use htsget_config::config::parser::from_path;
+use htsget_config::config::Config as HtsGetConfig;
 use http::uri::Authority;
 use serde::{Deserialize, Serialize};
+use std::io;
+use std::path::Path;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct Config {
@@ -14,7 +14,7 @@ struct Config {
     parameters_secrets_extension_http_port: u16,
     dynamodb_table_name: String,
     #[serde(with = "http_serde::authority")]
-    elsa_endpoint: Authority
+    elsa_endpoint: Authority,
 }
 
 impl Config {

@@ -1,6 +1,5 @@
 use crate::Error::{
-    DeserializeError, GetManifest, InvalidManifestUri, InvalidReleaseUri,
-    UnsupportedManifestFeature,
+    DeserializeError, GetManifest, InvalidManifest, InvalidReleaseUri, UnsupportedManifestFeature,
 };
 use crate::{Cache, Error, GetObject, ResolversFromElsa, Result};
 use async_trait::async_trait;
@@ -72,43 +71,38 @@ impl ElsaManifest {
         id: &str,
         format: Format,
     ) -> Result<Resolver> {
-        let uri = Uri::from_str(url)
-            .map_err(|err| InvalidManifestUri(err.to_string()))?
-            .into_parts();
-
-        match uri.scheme {
-            Some(scheme) if scheme.as_str() == "s3" || scheme.as_str() == "S3" => Ok(()),
+        let url = match (url.strip_prefix("s3://"), url.strip_prefix("S3://")) {
+            (Some(url), _) | (_, Some(url)) => Ok(url),
             _ => Err(UnsupportedManifestFeature(
                 "only S3 manifest uris are supported".to_string(),
             )),
         }?;
 
-        let bucket = match uri.authority {
-            Some(bucket) => Ok(bucket.to_string()),
-            None => Err(InvalidManifestUri("missing bucket from uri".to_string())),
-        }?;
-
-        let key = match uri.path_and_query {
-            Some(path) => match path.to_string().strip_suffix(format.file_ending()) {
-                None => Ok(path.to_string()),
-                Some(key) => Ok(key.to_string()),
-            },
-            None => Err(InvalidManifestUri(
-                "missing object path from uri".to_string(),
+        let (bucket, key) = match url.split_once("/") {
+            Some(split) => Ok(split),
+            None => Err(InvalidManifest(
+                "could not split url into bucket and object key".to_string(),
             )),
         }?;
 
+        if bucket == "" || key == "" {
+            return Err(InvalidManifest("bucket or key is empty".to_string()));
+        }
+
+        let key = match key.to_string().strip_suffix(format.file_ending()) {
+            None => key.to_string(),
+            Some(key) => key.to_string(),
+        };
+
         Resolver::new(
             Storage::S3 {
-                s3_storage: S3Storage::new(bucket),
+                s3_storage: S3Storage::new(bucket.to_string()),
             },
             &format!("^{}/{}$", release_key, id),
             &key,
             AllowGuard::default().with_allow_formats(vec![format]),
         )
-        .map_err(|err| {
-            InvalidManifestUri(format!("failed to construct regex: {}", err.to_string()))
-        })
+        .map_err(|err| InvalidManifest(format!("failed to construct regex: {}", err.to_string())))
     }
 }
 
@@ -139,7 +133,7 @@ impl TryFrom<ElsaManifest> for Vec<Resolver> {
                             &release_key,
                             &variants_manifest.url,
                             &id,
-                            variants_manifest.format.unwrap_or(Format::Bam),
+                            variants_manifest.format.unwrap_or(Format::Vcf),
                         )
                     }),
             )
@@ -166,7 +160,9 @@ where
 
     #[instrument(level = "debug", skip_all)]
     async fn try_get(&self, release_key: String) -> Result<Vec<Resolver>> {
-        match self.cache.get(&release_key).await {
+        let cache_key = format!("{CACHE_PATH}/{release_key}");
+
+        match self.cache.get(&cache_key).await {
             Ok(Some(cached)) => Ok(cached),
             _ => {
                 debug!("no cached response, fetching from elsa");
@@ -177,7 +173,7 @@ where
                 let resolvers: Vec<Resolver> = self.get_manifest(response).await?.try_into()?;
 
                 self.cache
-                    .put(format!("{CACHE_PATH}/{release_key}"), resolvers.clone(), max_age)
+                    .put(cache_key, resolvers.clone(), max_age)
                     .await?;
 
                 Ok(resolvers)
@@ -192,16 +188,28 @@ where
     S: GetObject<Error = Error>,
 {
     pub fn new(endpoint: Authority, cache: &'a C, get_object: &'a S) -> Result<Self> {
-        Ok(Self::new_with_client(Self::create_client()?, endpoint, cache, get_object, "https"))
+        Ok(Self::new_with_client(
+            Self::create_client()?,
+            endpoint,
+            cache,
+            get_object,
+            "https",
+        ))
     }
 
-    fn new_with_client(client: Client, endpoint: Authority, cache: &'a C, get_object: &'a S, scheme: &'a str) -> Self {
+    fn new_with_client(
+        client: Client,
+        endpoint: Authority,
+        cache: &'a C,
+        get_object: &'a S,
+        scheme: &'a str,
+    ) -> Self {
         Self {
             endpoint,
             client,
             cache,
             get_object,
-            scheme
+            scheme,
         }
     }
 
@@ -213,7 +221,11 @@ where
             .map_err(|err| Error::InvalidClient(err))
     }
 
-    async fn get_response_with_scheme(&self, release_key: &str, scheme: &str) -> Result<ElsaResponse> {
+    async fn get_response_with_scheme(
+        &self,
+        release_key: &str,
+        scheme: &str,
+    ) -> Result<ElsaResponse> {
         let uri = Uri::builder()
             .scheme(scheme)
             .authority(self.endpoint.as_str())
@@ -223,14 +235,18 @@ where
             .map_err(|_| InvalidReleaseUri(release_key.to_string()))?
             .map_err(|_| InvalidReleaseUri(release_key.to_string()))?;
 
-        let response = self.client
+        let response = self
+            .client
             .get(uri)
             .send()
             .await
             .map_err(|err| GetManifest(err.to_string()))?;
 
         if response.status().is_success() {
-            response.json().await.map_err(|err| DeserializeError(err.to_string()))
+            response
+                .json()
+                .await
+                .map_err(|err| DeserializeError(err.to_string()))
         } else {
             Err(GetManifest(response.status().to_string()))
         }
@@ -238,7 +254,8 @@ where
 
     #[instrument(level = "debug", skip(self), ret)]
     pub async fn get_response(&self, release_key: &str) -> Result<ElsaResponse> {
-        self.get_response_with_scheme(release_key, self.scheme).await
+        self.get_response_with_scheme(release_key, self.scheme)
+            .await
     }
 
     #[instrument(level = "debug", skip(self), ret)]
@@ -251,60 +268,260 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-    use std::future::Future;
-    use std::str::FromStr;
-    use aws_sdk_s3::Client;
-    use http::uri::Authority;
-    use htsget_test::aws_mocks::with_s3_test_server_tmp;
-    use serde_json::from_str;
-    use wiremock::{Mock, MockServer, Request, ResponseTemplate, Times};
-    use wiremock::matchers::{method, path, query_param};
-    use crate::elsa_endpoint::{ElsaEndpoint, ElsaLocation, ElsaResponse, ENDPOINT_PATH};
-    use crate::Error::{GetManifest, GetObjectError};
-    use crate::ResolversFromElsa;
+    use crate::elsa_endpoint::{
+        ElsaEndpoint, ElsaLocation, ElsaManifest, ElsaResponse, CACHE_PATH, ENDPOINT_PATH,
+    };
     use crate::s3::S3;
-    use crate::tests::{example_elsa_manifest, example_elsa_response, with_test_mocks};
+    use crate::tests::{
+        example_elsa_manifest, example_elsa_response, with_test_mocks, write_example_manifest,
+    };
+    use crate::Error::{GetObjectError, InvalidManifest, UnsupportedManifestFeature};
+    use crate::{Cache, ResolversFromElsa};
+    use htsget_config::resolver::Resolver;
+    use htsget_config::storage;
+    use htsget_config::types::Format;
+    use http::response;
+    use http::uri::Authority;
+    use serde_json::from_str;
+    use std::iter::Iterator;
+    use std::str::FromStr;
+    use wiremock::matchers::{path, query_param};
+    use wiremock::{MockServer, Request, ResponseTemplate, Times};
 
     #[tokio::test]
     async fn get_response() {
-        with_test_mocks(|endpoint, s3_client, reqwest_client, _| async move {
-            let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
-            let endpoint = ElsaEndpoint::new_with_client(reqwest_client, Authority::from_str(&endpoint).unwrap(), &s3, &s3, "http");
+        with_test_mocks(
+            |endpoint, s3_client, reqwest_client, _| async move {
+                let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+                let endpoint = ElsaEndpoint::new_with_client(
+                    reqwest_client,
+                    Authority::from_str(&endpoint).unwrap(),
+                    &s3,
+                    &s3,
+                    "http",
+                );
 
-            let response = endpoint.get_response_with_scheme("R004", "http").await.unwrap();
-            assert_eq!(response, ElsaResponse {
-                location: ElsaLocation {
-                    bucket: "elsa-data-tmp".to_string(),
-                    key: "htsget-manifests/R004".to_string(),
-                },
-                max_age: 86400,
-            });
-        }, 1).await;
+                let response = endpoint.get_response("R004").await.unwrap();
+                assert_eq!(
+                    response,
+                    ElsaResponse {
+                        location: ElsaLocation {
+                            bucket: "elsa-data-tmp".to_string(),
+                            key: "htsget-manifests/R004".to_string(),
+                        },
+                        max_age: 86400,
+                    }
+                );
+            },
+            1,
+        )
+        .await;
     }
 
     #[tokio::test]
     async fn get_manifest() {
-        with_test_mocks(|endpoint, s3_client, reqwest_client, _| async move {
-            let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
-            let endpoint = ElsaEndpoint::new_with_client(reqwest_client, Authority::from_str(&endpoint).unwrap(), &s3, &s3, "http");
+        with_test_mocks(
+            |endpoint, s3_client, reqwest_client, _| async move {
+                let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+                let endpoint = ElsaEndpoint::new_with_client(
+                    reqwest_client,
+                    Authority::from_str(&endpoint).unwrap(),
+                    &s3,
+                    &s3,
+                    "http",
+                );
 
-            let response = endpoint.get_response_with_scheme("R004", "http").await.unwrap();
-            let manifest = endpoint.get_manifest(response).await.unwrap();
+                let response = endpoint.get_response("R004").await.unwrap();
+                let manifest = endpoint.get_manifest(response).await.unwrap();
 
-            assert_eq!(manifest, from_str(&example_elsa_manifest()).unwrap());
-        }, 1).await;
+                assert_eq!(manifest, from_str(&example_elsa_manifest()).unwrap());
+            },
+            1,
+        )
+        .await;
     }
 
     #[tokio::test]
     async fn get_manifest_not_present() {
-        with_test_mocks(|endpoint, s3_client, reqwest_client, _| async move {
-            let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
-            let endpoint = ElsaEndpoint::new_with_client(reqwest_client, Authority::from_str(&endpoint).unwrap(), &s3, &s3, "http");
+        with_test_mocks(
+            |endpoint, s3_client, reqwest_client, _| async move {
+                let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+                let endpoint = ElsaEndpoint::new_with_client(
+                    reqwest_client,
+                    Authority::from_str(&endpoint).unwrap(),
+                    &s3,
+                    &s3,
+                    "http",
+                );
 
-            let manifest = endpoint.get_manifest(from_str(&example_elsa_response()).unwrap()).await;
+                let manifest = endpoint
+                    .get_manifest(from_str(&example_elsa_response()).unwrap())
+                    .await;
 
-            assert!(matches!(manifest, Err(GetObjectError(_))));
-        }, 0).await;
+                assert!(matches!(manifest, Err(GetObjectError(_))));
+            },
+            0,
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn try_get_cached() {
+        with_test_mocks(
+            |endpoint, s3_client, reqwest_client, base_path| async move {
+                let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+                let endpoint = ElsaEndpoint::new_with_client(
+                    reqwest_client,
+                    Authority::from_str(&endpoint).unwrap(),
+                    &s3,
+                    &s3,
+                    "http",
+                );
+
+                s3.put(format!("{CACHE_PATH}/R004"), vec![], 1000)
+                    .await
+                    .unwrap();
+
+                let resolvers = endpoint.try_get("R004".to_string()).await.unwrap();
+                assert!(resolvers.is_empty());
+            },
+            0,
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn try_get_not_cached() {
+        with_test_mocks(
+            |endpoint, s3_client, reqwest_client, base_path| async move {
+                let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+                let endpoint = ElsaEndpoint::new_with_client(
+                    reqwest_client,
+                    Authority::from_str(&endpoint).unwrap(),
+                    &s3,
+                    &s3,
+                    "http",
+                );
+
+                assert!(!base_path
+                    .join(format!("elsa-data-tmp/{CACHE_PATH}/R004"))
+                    .exists());
+                let resolvers = endpoint.try_get("R004".to_string()).await.unwrap();
+
+                assert_manifest_resolvers(resolvers);
+                assert!(base_path
+                    .join(format!("elsa-data-tmp/{CACHE_PATH}/R004"))
+                    .exists());
+            },
+            1,
+        )
+        .await;
+    }
+
+    #[test]
+    fn resolvers_from_manifest() {
+        let manifest: ElsaManifest = from_str(&example_elsa_manifest()).unwrap();
+        let resolvers: Vec<Resolver> = manifest.try_into().unwrap();
+        assert_manifest_resolvers(resolvers);
+    }
+
+    #[test]
+    fn resolver_from_parts() {
+        let response = ElsaManifest::resolver_from_manifest_parts(
+            "R004",
+            "s3://umccr-10g-data-dev/HG00097/HG00097.bam",
+            "30F9F3FED8F711ED8C35DBEF59E9F537",
+            Format::Bam,
+        )
+        .unwrap();
+        assert!(is_resolver_from_parts(&response));
+    }
+
+    #[test]
+    fn resolver_from_parts_uppercase() {
+        let response = ElsaManifest::resolver_from_manifest_parts(
+            "R004",
+            "S3://umccr-10g-data-dev/HG00097/HG00097.bam",
+            "30F9F3FED8F711ED8C35DBEF59E9F537",
+            Format::Bam,
+        )
+        .unwrap();
+        assert!(is_resolver_from_parts(&response));
+    }
+
+    #[test]
+    fn resolver_from_parts_no_file_ending() {
+        let response = ElsaManifest::resolver_from_manifest_parts(
+            "R004",
+            "s3://umccr-10g-data-dev/HG00097/HG00097",
+            "30F9F3FED8F711ED8C35DBEF59E9F537",
+            Format::Bam,
+        )
+        .unwrap();
+        assert!(is_resolver_from_parts(&response));
+    }
+
+    #[test]
+    fn resolver_from_parts_invalid_scheme() {
+        let response = ElsaManifest::resolver_from_manifest_parts(
+            "R004",
+            "gcp://umccr-10g-data-dev/HG00097/HG00097.bam",
+            "30F9F3FED8F711ED8C35DBEF59E9F537",
+            Format::Bam,
+        );
+        assert!(matches!(response, Err(UnsupportedManifestFeature(_))));
+    }
+
+    #[test]
+    fn resolver_from_parts_no_object_key() {
+        let response = ElsaManifest::resolver_from_manifest_parts(
+            "R004",
+            "s3://umccr-10g-data-dev",
+            "30F9F3FED8F711ED8C35DBEF59E9F537",
+            Format::Bam,
+        );
+        assert!(matches!(response, Err(InvalidManifest(_))));
+    }
+
+    #[test]
+    fn resolver_from_parts_no_bucket() {
+        let response = ElsaManifest::resolver_from_manifest_parts(
+            "R004",
+            "s3:///HG00097/HG00097.bam",
+            "30F9F3FED8F711ED8C35DBEF59E9F537",
+            Format::Bam,
+        );
+        assert!(matches!(response, Err(InvalidManifest(_))));
+    }
+
+    fn is_resolver_from_parts(resolver: &Resolver) -> bool {
+        resolver.regex().to_string() == "^R004/30F9F3FED8F711ED8C35DBEF59E9F537$"
+            && resolver.substitution_string().to_string() == "HG00097/HG00097"
+            && matches!(resolver.storage(), storage::Storage::S3 { s3_storage } if s3_storage.bucket() == "umccr-10g-data-dev")
+            && resolver.allow_formats() == [Format::Bam]
+    }
+
+    fn assert_manifest_resolvers(resolvers: Vec<Resolver>) {
+        assert!(resolvers.iter().any(|resolver| {
+            resolver.regex().to_string() == "^R004/30F9FFD4D8F711ED8C353BBCB8861211$" &&
+                resolver.substitution_string().to_string() == "HG00096/HG00096" &&
+                matches!(resolver.storage(), storage::Storage::S3 { s3_storage } if s3_storage.bucket() == "umccr-10g-data-dev") &&
+                resolver.allow_formats() == [Format::Bam]
+        }));
+        assert!(resolvers
+            .iter()
+            .any(|resolver| is_resolver_from_parts(resolver)));
+        assert!(resolvers.iter().any(|resolver| {
+            resolver.regex().to_string() == "^R004/30F9FFD4D8F711ED8C353BBCB8861211$" &&
+                resolver.substitution_string().to_string() == "HG00096/HG00096.hard-filtered" &&
+                matches!(resolver.storage(), storage::Storage::S3 { s3_storage } if s3_storage.bucket() == "umccr-10g-data-dev") &&
+                resolver.allow_formats() == [Format::Vcf]
+        }));
+        assert!(resolvers.iter().any(|resolver| {
+            resolver.regex().to_string() == "^R004/30F9F3FED8F711ED8C35DBEF59E9F537$" &&
+                resolver.substitution_string().to_string() == "HG00097/HG00097.hard-filtered" &&
+                matches!(resolver.storage(), storage::Storage::S3 { s3_storage } if s3_storage.bucket() == "umccr-10g-data-dev") &&
+                resolver.allow_formats() == [Format::Vcf]
+        }));
     }
 }

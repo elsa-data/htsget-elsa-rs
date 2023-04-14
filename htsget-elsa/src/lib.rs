@@ -27,7 +27,7 @@ pub enum Error {
     #[error("failed to put object into storage: `{0}`")]
     PutObjectError(String),
     #[error("invalid uri received from manifest: `{0}`")]
-    InvalidManifestUri(String),
+    InvalidManifest(String),
     #[error("unsupported component of manifest: `{0}`")]
     UnsupportedManifestFeature(String),
     #[error("system error: `{0}`")]
@@ -71,14 +71,14 @@ pub trait ResolversFromElsa {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use crate::elsa_endpoint::ENDPOINT_PATH;
+    use aws_sdk_s3::Client;
+    use htsget_test::aws_mocks::with_s3_test_server_tmp;
     use std::fs;
     use std::future::Future;
     use std::path::{Path, PathBuf};
-    use aws_sdk_s3::Client;
-    use htsget_test::aws_mocks::with_s3_test_server_tmp;
-    use wiremock::{Mock, MockServer, Request, ResponseTemplate, Times};
     use wiremock::matchers::{method, path, query_param};
-    use crate::elsa_endpoint::ENDPOINT_PATH;
+    use wiremock::{Mock, MockServer, Request, ResponseTemplate, Times};
 
     pub(crate) fn example_elsa_manifest() -> String {
         r#"
@@ -134,7 +134,8 @@ pub(crate) mod tests {
                 }
             ]
         }
-        "#.to_string()
+        "#
+        .to_string()
     }
 
     pub(crate) fn example_elsa_response() -> String {
@@ -146,7 +147,8 @@ pub(crate) mod tests {
             },
             "maxAge": 86400
         }
-        "#.to_string()
+        "#
+        .to_string()
     }
 
     pub(crate) fn write_example_manifest(manifest_path: &Path) {
@@ -155,10 +157,11 @@ pub(crate) mod tests {
     }
 
     pub(crate) async fn with_test_mocks<T, F, Fut>(test: F, expect_times: T)
-        where
-            T: Into<Times>,
-            F: FnOnce(String, Client, reqwest::Client, PathBuf) -> Fut,
-            Fut: Future<Output = ()>, {
+    where
+        T: Into<Times>,
+        F: FnOnce(String, Client, reqwest::Client, PathBuf) -> Fut,
+        Fut: Future<Output = ()>,
+    {
         with_s3_test_server_tmp(|client, server_base_path| async move {
             let mock_server = MockServer::start().await;
 
@@ -171,15 +174,20 @@ pub(crate) mod tests {
 
                     write_example_manifest(&manifest_path);
 
-                    ResponseTemplate::new(200)
-                        .set_body_string(example_elsa_response())
+                    ResponseTemplate::new(200).set_body_string(example_elsa_response())
                 })
                 .expect(expect_times)
                 .mount(&mock_server)
                 .await;
 
-            test(mock_server.address().to_string(), client, reqwest::Client::builder()
-                .build().unwrap(), server_base_path).await;
-        }).await;
+            test(
+                mock_server.address().to_string(),
+                client,
+                reqwest::Client::builder().build().unwrap(),
+                server_base_path,
+            )
+            .await;
+        })
+        .await;
     }
 }

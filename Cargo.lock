@@ -1453,6 +1453,7 @@ dependencies = [
  "htsget-config",
  "htsget-test",
  "http",
+ "indexmap",
  "mockito",
  "regex",
  "reqwest",

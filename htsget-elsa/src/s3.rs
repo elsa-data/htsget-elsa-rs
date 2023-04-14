@@ -1,6 +1,11 @@
 use crate::Error::{DeserializeError, GetObjectError, PutObjectError, SerializeError};
 use crate::{Cache, Error, GetObject, Result};
 use async_trait::async_trait;
+use aws_sdk_s3::error::HeadObjectError;
+use aws_sdk_s3::output::HeadObjectOutput;
+use aws_sdk_s3::types::{ByteStream, DateTime, SdkError};
+use aws_sdk_s3::Client;
+use aws_sdk_s3::Error::NotFound;
 use bytes::Bytes;
 use htsget_config::resolver::Resolver;
 use serde::{Deserialize, Serialize};
@@ -8,11 +13,6 @@ use serde_json::{from_slice, to_string, to_vec};
 use std::ops::{Add, Sub};
 use std::result;
 use std::time::{Duration, SystemTime};
-use aws_sdk_s3::Client;
-use aws_sdk_s3::error::HeadObjectError;
-use aws_sdk_s3::Error::NotFound;
-use aws_sdk_s3::output::HeadObjectOutput;
-use aws_sdk_s3::types::{ByteStream, DateTime, SdkError};
 use tracing::instrument;
 
 #[derive(Debug)]
@@ -50,8 +50,7 @@ impl S3 {
         bucket: impl Into<String> + Send,
         key: impl Into<String> + Send,
     ) -> Option<DateTime> {
-        self
-            .s3_client
+        self.s3_client
             .head_object()
             .bucket(bucket)
             .key(key)
@@ -104,13 +103,18 @@ impl Cache for S3 {
 
     #[instrument(level = "trace", skip_all, ret)]
     async fn get<K: AsRef<str> + Send + Sync>(&self, key: K) -> Result<Option<Self::Item>> {
-        if let Some(last_modified) = self.last_modified(self.cache_bucket.clone(), key.as_ref()).await {
-            let object: CacheItem = self.get_object(self.cache_bucket.clone(), key.as_ref()).await?;
+        if let Some(last_modified) = self
+            .last_modified(self.cache_bucket.clone(), key.as_ref())
+            .await
+        {
+            let object: CacheItem = self
+                .get_object(self.cache_bucket.clone(), key.as_ref())
+                .await?;
 
             if last_modified.as_nanos()
-                > DateTime::from(
-                SystemTime::now().sub(Duration::from_secs(object.max_age)),
-            ).as_nanos() {
+                > DateTime::from(SystemTime::now().sub(Duration::from_secs(object.max_age)))
+                    .as_nanos()
+            {
                 return Ok(Some(object.item));
             }
         }
@@ -143,130 +147,193 @@ impl Cache for S3 {
 
 #[cfg(test)]
 mod tests {
+    use crate::elsa_endpoint::{ElsaEndpoint, ElsaManifest};
+    use crate::s3::{CacheItem, S3};
+    use crate::tests::{example_elsa_manifest, with_test_mocks, write_example_manifest};
+    use crate::Cache;
+    use http::uri::Authority;
+    use serde_json::{from_str, to_string};
     use std::fs;
     use std::str::FromStr;
     use std::time::Duration;
-    use http::uri::Authority;
-    use serde_json::{from_str, to_string};
     use tokio::time::sleep;
-    use crate::Cache;
-    use crate::elsa_endpoint::{ElsaEndpoint, ElsaManifest};
-    use crate::s3::{CacheItem, S3};
-    use crate::tests::{with_test_mocks, write_example_manifest, example_elsa_manifest};
 
     #[tokio::test]
     async fn last_modified() {
-        with_test_mocks(|_, s3_client, _, base_path| async move {
-            let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+        with_test_mocks(
+            |_, s3_client, _, base_path| async move {
+                let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
 
-            let manifest_path = base_path.join("elsa-data-tmp/htsget-manifests");
-            write_example_manifest(&manifest_path);
+                let manifest_path = base_path.join("elsa-data-tmp/htsget-manifests");
+                write_example_manifest(&manifest_path);
 
-            let result = s3.last_modified("elsa-data-tmp", "htsget-manifests/R004").await;
-            assert!(matches!(result, Some(_)));
-        }, 0).await;
+                let result = s3
+                    .last_modified("elsa-data-tmp", "htsget-manifests/R004")
+                    .await;
+                assert!(matches!(result, Some(_)));
+            },
+            0,
+        )
+        .await;
     }
 
     #[tokio::test]
     async fn last_modified_not_found() {
-        with_test_mocks(|_, s3_client, _, base_path| async move {
-            let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+        with_test_mocks(
+            |_, s3_client, _, base_path| async move {
+                let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
 
-            let manifest_path = base_path.join("elsa-data-tmp/htsget-manifests");
-            write_example_manifest(&manifest_path);
+                let manifest_path = base_path.join("elsa-data-tmp/htsget-manifests");
+                write_example_manifest(&manifest_path);
 
-            let result = s3.last_modified("elsa-data-tmp", "htsget-manifests/R005").await;
-            assert!(matches!(result, None));
-        }, 0).await;
+                let result = s3
+                    .last_modified("elsa-data-tmp", "htsget-manifests/R005")
+                    .await;
+                assert!(matches!(result, None));
+            },
+            0,
+        )
+        .await;
     }
 
     #[tokio::test]
     async fn get_object() {
-        with_test_mocks(|_, s3_client, _, base_path| async move {
-            let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+        with_test_mocks(
+            |_, s3_client, _, base_path| async move {
+                let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
 
-            let manifest_path = base_path.join("elsa-data-tmp/htsget-manifests");
-            write_example_manifest(&manifest_path);
+                let manifest_path = base_path.join("elsa-data-tmp/htsget-manifests");
+                write_example_manifest(&manifest_path);
 
-            let result: ElsaManifest = s3.get_object("elsa-data-tmp", "htsget-manifests/R004").await.unwrap();
-            assert_eq!(result, from_str(&example_elsa_manifest()).unwrap());
-        }, 0).await;
+                let result: ElsaManifest = s3
+                    .get_object("elsa-data-tmp", "htsget-manifests/R004")
+                    .await
+                    .unwrap();
+                assert_eq!(result, from_str(&example_elsa_manifest()).unwrap());
+            },
+            0,
+        )
+        .await;
     }
 
     #[tokio::test]
     async fn get_object_not_found() {
-        with_test_mocks(|_, s3_client, _, base_path| async move {
-            let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+        with_test_mocks(
+            |_, s3_client, _, base_path| async move {
+                let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
 
-            let manifest_path = base_path.join("elsa-data-tmp/htsget-manifests");
-            write_example_manifest(&manifest_path);
+                let manifest_path = base_path.join("elsa-data-tmp/htsget-manifests");
+                write_example_manifest(&manifest_path);
 
-            assert!(s3.get_object::<ElsaManifest>("elsa-data-tmp", "htsget-manifests/R005").await.is_err());
-        }, 0).await;
+                assert!(s3
+                    .get_object::<ElsaManifest>("elsa-data-tmp", "htsget-manifests/R005")
+                    .await
+                    .is_err());
+            },
+            0,
+        )
+        .await;
     }
 
     #[tokio::test]
     async fn get_not_found() {
-        with_test_mocks(|_, s3_client, _, base_path| async move {
-            let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+        with_test_mocks(
+            |_, s3_client, _, base_path| async move {
+                let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
 
-            let manifest_path = base_path.join("elsa-data-tmp/htsget-manifests");
-            fs::create_dir_all(&manifest_path).unwrap();
-            fs::write(&manifest_path.join("R004"), to_string(
-                &CacheItem { item: vec![], max_age: 1000 }
-            ).unwrap()).unwrap();
+                let manifest_path = base_path.join("elsa-data-tmp/htsget-manifests");
+                fs::create_dir_all(&manifest_path).unwrap();
+                fs::write(
+                    &manifest_path.join("R004"),
+                    to_string(&CacheItem {
+                        item: vec![],
+                        max_age: 1000,
+                    })
+                    .unwrap(),
+                )
+                .unwrap();
 
-            let result = s3.get("htsget-manifests/R005").await;
-            assert!(matches!(result, Ok(None)));
-        }, 0).await;
+                let result = s3.get("htsget-manifests/R005").await;
+                assert!(matches!(result, Ok(None)));
+            },
+            0,
+        )
+        .await;
     }
 
     #[tokio::test]
     async fn get_cache_expired() {
-        with_test_mocks(|_, s3_client, _, base_path| async move {
-            let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+        with_test_mocks(
+            |_, s3_client, _, base_path| async move {
+                let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
 
-            let manifest_path = base_path.join("elsa-data-tmp/htsget-manifests");
-            fs::create_dir_all(&manifest_path).unwrap();
-            fs::write(&manifest_path.join("R004"), to_string(
-                &CacheItem { item: vec![], max_age: 0 }
-            ).unwrap()).unwrap();
+                let manifest_path = base_path.join("elsa-data-tmp/htsget-manifests");
+                fs::create_dir_all(&manifest_path).unwrap();
+                fs::write(
+                    &manifest_path.join("R004"),
+                    to_string(&CacheItem {
+                        item: vec![],
+                        max_age: 0,
+                    })
+                    .unwrap(),
+                )
+                .unwrap();
 
-            let result = s3.get("htsget-manifests/R004").await;
-            assert!(matches!(result, Ok(None)));
-        }, 0).await;
+                let result = s3.get("htsget-manifests/R004").await;
+                assert!(matches!(result, Ok(None)));
+            },
+            0,
+        )
+        .await;
     }
 
     #[tokio::test]
     async fn get() {
-        with_test_mocks(|_, s3_client, _, base_path| async move {
-            let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+        with_test_mocks(
+            |_, s3_client, _, base_path| async move {
+                let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
 
-            let manifest_path = base_path.join("elsa-data-tmp/htsget-manifests");
-            fs::create_dir_all(&manifest_path).unwrap();
-            fs::write(&manifest_path.join("R004"), to_string(
-                &CacheItem { item: vec![], max_age: 1000 }
-            ).unwrap()).unwrap();
+                let manifest_path = base_path.join("elsa-data-tmp/htsget-manifests");
+                fs::create_dir_all(&manifest_path).unwrap();
+                fs::write(
+                    &manifest_path.join("R004"),
+                    to_string(&CacheItem {
+                        item: vec![],
+                        max_age: 1000,
+                    })
+                    .unwrap(),
+                )
+                .unwrap();
 
-            let result = s3.get("htsget-manifests/R004").await.unwrap().unwrap();
-            assert!(result.is_empty());
-        }, 0).await;
+                let result = s3.get("htsget-manifests/R004").await.unwrap().unwrap();
+                assert!(result.is_empty());
+            },
+            0,
+        )
+        .await;
     }
 
     #[tokio::test]
     async fn put() {
-        with_test_mocks(|_, s3_client, _, base_path| async move {
-            let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+        with_test_mocks(
+            |_, s3_client, _, base_path| async move {
+                let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
 
-            let manifest_path = base_path.join("elsa-data-tmp");
-            fs::create_dir_all(&manifest_path).unwrap();
+                let manifest_path = base_path.join("elsa-data-tmp");
+                fs::create_dir_all(&manifest_path).unwrap();
 
-            s3.put("htsget-manifests/R004", vec![], 1000).await.unwrap();
+                s3.put("htsget-manifests/R004", vec![], 1000).await.unwrap();
 
-            let result: CacheItem = from_str(&fs::read_to_string(&manifest_path.join("htsget-manifests/R004")).unwrap()).unwrap();
+                let result: CacheItem = from_str(
+                    &fs::read_to_string(&manifest_path.join("htsget-manifests/R004")).unwrap(),
+                )
+                .unwrap();
 
-            assert!(result.item.is_empty());
-            assert_eq!(result.max_age, 1000);
-        }, 0).await;
+                assert!(result.item.is_empty());
+                assert_eq!(result.max_age, 1000);
+            },
+            0,
+        )
+        .await;
     }
 }

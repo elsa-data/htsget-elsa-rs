@@ -1,4 +1,3 @@
-pub mod dynamodb;
 pub mod elsa_endpoint;
 pub mod s3;
 
@@ -18,14 +17,20 @@ pub enum Error {
     InvalidReleaseUri(String),
     #[error("failed to get manifest from Elsa: `{0}`")]
     GetGetManifest(reqwest::Error),
-    #[error("failed to deserialize type: `{0}")]
+    #[error("failed to deserialize: `{0}")]
     DeserializeError(String),
+    #[error("failed to serialize: `{0}")]
+    SerializeError(String),
     #[error("failed to get object from storage: `{0}`")]
     GetObjectError(String),
+    #[error("failed to put object into storage: `{0}`")]
+    PutObjectError(String),
     #[error("invalid uri received from manifest: `{0}`")]
     InvalidManifestUri(String),
     #[error("unsupported component of manifest: `{0}`")]
     UnsupportedManifestFeature(String),
+    #[error("system error: `{0}`")]
+    SystemError(String),
 }
 
 #[async_trait]
@@ -33,8 +38,16 @@ pub trait Cache {
     type Error;
     type Item;
 
-    async fn get<K: AsRef<str> + Send>(&self, key: K) -> result::Result<Self::Item, Self::Error>;
-    async fn put<K: AsRef<str> + Send>(&self, key: K, item: Self::Item, expiry: u64);
+    async fn get<K: AsRef<str> + Send + Sync>(
+        &self,
+        key: K,
+    ) -> result::Result<Option<Self::Item>, Self::Error>;
+    async fn put<K: AsRef<str> + Send + Sync>(
+        &self,
+        key: K,
+        item: Self::Item,
+        max_age: u64,
+    ) -> result::Result<(), Self::Error>;
 }
 
 #[async_trait]

@@ -126,14 +126,19 @@ impl TryFrom<ElsaManifest> for Vec<Resolver> {
                     reads_manifest.format.unwrap_or(Format::Bam),
                 )
             })
-            .chain(manifest.variants.into_iter().map(|(id, variants_manifest)| {
-                ElsaManifest::resolver_from_manifest_parts(
-                    &release_key,
-                    &variants_manifest.url,
-                    &id,
-                    variants_manifest.format.unwrap_or(Format::Bam),
-                )
-            }))
+            .chain(
+                manifest
+                    .variants
+                    .into_iter()
+                    .map(|(id, variants_manifest)| {
+                        ElsaManifest::resolver_from_manifest_parts(
+                            &release_key,
+                            &variants_manifest.url,
+                            &id,
+                            variants_manifest.format.unwrap_or(Format::Bam),
+                        )
+                    }),
+            )
             .collect()
     }
 }
@@ -156,12 +161,18 @@ where
 
     async fn try_get(&self, release_key: String) -> Result<Vec<Resolver>> {
         match self.cache.get(&release_key).await {
-            Ok(cached) => Ok(cached),
-            Err(_) => {
+            Ok(Some(cached)) => Ok(cached),
+            _ => {
                 let response = self.get_response(&release_key).await?;
-                let manifest = self.get_manifest(response).await?;
+                let max_age = response.max_age;
 
-                manifest.try_into()
+                let resolvers: Vec<Resolver> = self.get_manifest(response).await?.try_into()?;
+
+                self.cache
+                    .put(&release_key, resolvers.clone(), max_age)
+                    .await?;
+
+                Ok(resolvers)
             }
         }
     }

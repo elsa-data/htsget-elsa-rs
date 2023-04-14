@@ -5,10 +5,14 @@ use bytes::Bytes;
 use htsget_config::resolver::Resolver;
 use serde::{Deserialize, Serialize};
 use serde_json::{from_slice, to_string, to_vec};
-use std::ops::Add;
+use std::ops::{Add, Sub};
+use std::result;
 use std::time::{Duration, SystemTime};
 use aws_sdk_s3::Client;
-use aws_sdk_s3::types::{ByteStream, DateTime};
+use aws_sdk_s3::error::HeadObjectError;
+use aws_sdk_s3::Error::NotFound;
+use aws_sdk_s3::output::HeadObjectOutput;
+use aws_sdk_s3::types::{ByteStream, DateTime, SdkError};
 use tracing::instrument;
 
 #[derive(Debug)]
@@ -40,11 +44,28 @@ impl S3 {
 }
 
 impl S3 {
+    /// Get the last modified date of the object.
+    async fn last_modified(
+        &self,
+        bucket: impl Into<String> + Send,
+        key: impl Into<String> + Send,
+    ) -> Option<DateTime> {
+        self
+            .s3_client
+            .head_object()
+            .bucket(bucket)
+            .key(key)
+            .send()
+            .await
+            .ok()
+            .and_then(|output| output.last_modified)
+    }
+
     async fn get_object<T: for<'de> Deserialize<'de>>(
         &self,
         bucket: impl Into<String> + Send,
         key: impl Into<String> + Send,
-    ) -> Result<(T, Option<DateTime>)> {
+    ) -> Result<T> {
         let output = self
             .s3_client
             .get_object()
@@ -52,21 +73,14 @@ impl S3 {
             .key(key)
             .send()
             .await
-            .map_err(|err| GetObjectError(err.to_string()))?;
-
-        let last_modified = output.last_modified().copied();
-
-        let output = output
+            .map_err(|err| GetObjectError(err.to_string()))?
             .body
             .collect()
             .await
             .map_err(|err| GetObjectError(err.to_string()))?
             .into_bytes();
 
-        Ok((
-            from_slice(output.as_ref()).map_err(|err| DeserializeError(err.to_string()))?,
-            last_modified,
-        ))
+        Ok(from_slice(output.as_ref()).map_err(|err| DeserializeError(err.to_string()))?)
     }
 }
 
@@ -79,7 +93,7 @@ impl GetObject for S3 {
         bucket: impl Into<String> + Send,
         key: impl Into<String> + Send,
     ) -> Result<T> {
-        Ok(self.get_object(bucket, key).await?.0)
+        Ok(self.get_object(bucket, key).await?)
     }
 }
 
@@ -90,22 +104,18 @@ impl Cache for S3 {
 
     #[instrument(level = "trace", skip_all, ret)]
     async fn get<K: AsRef<str> + Send + Sync>(&self, key: K) -> Result<Option<Self::Item>> {
-        let (object, last_modified): (CacheItem, _) = self
-            .get_object(self.cache_bucket.clone(), key.as_ref())
-            .await?;
+        if let Some(last_modified) = self.last_modified(self.cache_bucket.clone(), key.as_ref()).await {
+            let object: CacheItem = self.get_object(self.cache_bucket.clone(), key.as_ref()).await?;
 
-        match last_modified {
-            Some(last_modified)
-                if last_modified.as_nanos()
-                    <= DateTime::from(
-                        SystemTime::now().add(Duration::from_secs(object.max_age)),
-                    )
-                    .as_nanos() =>
-            {
-                Ok(Some(object.item))
+            if last_modified.as_nanos()
+                > DateTime::from(
+                SystemTime::now().sub(Duration::from_secs(object.max_age)),
+            ).as_nanos() {
+                return Ok(Some(object.item));
             }
-            _ => Ok(None),
         }
+
+        Ok(None)
     }
 
     #[instrument(level = "trace", skip_all, ret)]
@@ -128,5 +138,66 @@ impl Cache for S3 {
             .map_err(|err| PutObjectError(err.to_string()))?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+    use http::uri::Authority;
+    use serde_json::from_str;
+    use crate::elsa_endpoint::{ElsaEndpoint, ElsaManifest};
+    use crate::s3::S3;
+    use crate::tests::{with_test_mocks, write_example_manifest, example_elsa_manifest};
+
+    #[tokio::test]
+    async fn last_modified() {
+        with_test_mocks(|_, s3_client, _, base_path| async move {
+            let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+
+            let manifest_path = base_path.join("elsa-data-tmp/htsget-manifests");
+            write_example_manifest(&manifest_path);
+
+            let result = s3.last_modified("elsa-data-tmp", "htsget-manifests/R004").await;
+            assert!(matches!(result, Some(_)));
+        }, 0).await;
+    }
+
+    #[tokio::test]
+    async fn last_modified_not_found() {
+        with_test_mocks(|_, s3_client, _, base_path| async move {
+            let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+
+            let manifest_path = base_path.join("elsa-data-tmp/htsget-manifests");
+            write_example_manifest(&manifest_path);
+
+            let result = s3.last_modified("elsa-data-tmp", "htsget-manifests/R005").await;
+            assert!(matches!(result, None));
+        }, 0).await;
+    }
+
+    #[tokio::test]
+    async fn get_object() {
+        with_test_mocks(|_, s3_client, _, base_path| async move {
+            let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+
+            let manifest_path = base_path.join("elsa-data-tmp/htsget-manifests");
+            write_example_manifest(&manifest_path);
+
+            let result: ElsaManifest = s3.get_object("elsa-data-tmp", "htsget-manifests/R004").await.unwrap();
+            assert_eq!(result, from_str(&example_elsa_manifest()).unwrap());
+        }, 0).await;
+    }
+
+    #[tokio::test]
+    async fn get_object_not_found() {
+        with_test_mocks(|_, s3_client, _, base_path| async move {
+            let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+
+            let manifest_path = base_path.join("elsa-data-tmp/htsget-manifests");
+            write_example_manifest(&manifest_path);
+
+            assert!(s3.get_object::<ElsaManifest>("elsa-data-tmp", "htsget-manifests/R005").await.is_err());
+        }, 0).await;
     }
 }

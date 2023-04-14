@@ -16,8 +16,8 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use tracing::{debug, instrument};
 
-const ENDPOINT_PATH: &str = "/api/manifest/htsget";
-const CACHE_PATH: &str = "htsget-manifest-cache";
+pub const ENDPOINT_PATH: &str = "/api/manifest/htsget";
+pub const CACHE_PATH: &str = "htsget-manifest-cache";
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -261,13 +261,14 @@ mod tests {
     use wiremock::{Mock, MockServer, Request, ResponseTemplate, Times};
     use wiremock::matchers::{method, path, query_param};
     use crate::elsa_endpoint::{ElsaEndpoint, ElsaLocation, ElsaResponse, ENDPOINT_PATH};
-    use crate::s3::S3;
     use crate::Error::{GetManifest, GetObjectError};
     use crate::ResolversFromElsa;
+    use crate::s3::S3;
+    use crate::tests::{example_elsa_manifest, example_elsa_response, with_test_mocks};
 
     #[tokio::test]
     async fn get_response() {
-        with_test_mocks(|endpoint, s3_client, reqwest_client| async move {
+        with_test_mocks(|endpoint, s3_client, reqwest_client, _| async move {
             let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
             let endpoint = ElsaEndpoint::new_with_client(reqwest_client, Authority::from_str(&endpoint).unwrap(), &s3, &s3, "http");
 
@@ -284,7 +285,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_manifest() {
-        with_test_mocks(|endpoint, s3_client, reqwest_client| async move {
+        with_test_mocks(|endpoint, s3_client, reqwest_client, _| async move {
             let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
             let endpoint = ElsaEndpoint::new_with_client(reqwest_client, Authority::from_str(&endpoint).unwrap(), &s3, &s3, "http");
 
@@ -297,7 +298,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_manifest_not_present() {
-        with_test_mocks(|endpoint, s3_client, reqwest_client| async move {
+        with_test_mocks(|endpoint, s3_client, reqwest_client, _| async move {
             let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
             let endpoint = ElsaEndpoint::new_with_client(reqwest_client, Authority::from_str(&endpoint).unwrap(), &s3, &s3, "http");
 
@@ -305,103 +306,5 @@ mod tests {
 
             assert!(matches!(manifest, Err(GetObjectError(_))));
         }, 0).await;
-    }
-
-    fn example_elsa_manifest() -> String {
-        r#"
-        {
-            "id": "R004",
-            "reads": {
-                "30F9F3FED8F711ED8C35DBEF59E9F537": {
-                    "url": "s3://umccr-10g-data-dev/HG00097/HG00097.bam"
-                },
-                "30F9FFD4D8F711ED8C353BBCB8861211": {
-                    "url": "s3://umccr-10g-data-dev/HG00096/HG00096.bam"
-                }
-            },
-            "variants": {
-                "30F9F3FED8F711ED8C35DBEF59E9F537": {
-                    "url": "s3://umccr-10g-data-dev/HG00097/HG00097.hard-filtered.vcf.gz",
-                    "variantSampleId": ""
-                },
-                "30F9FFD4D8F711ED8C353BBCB8861211": {
-                    "url": "s3://umccr-10g-data-dev/HG00096/HG00096.hard-filtered.vcf.gz",
-                    "variantSampleId": ""
-                }
-            },
-            "restrictions": {},
-            "cases": [
-                {
-                    "ids": { "": "SINGLETONCHARLES" },
-                    "patients": [
-                        {
-                            "ids": { "": "CHARLES" },
-                            "specimens": [
-                                {
-                                    "htsgetId": "30F9FFD4D8F711ED8C353BBCB8861211",
-                                    "ids": { "": "HG00096" }
-                                }
-                            ]
-                        }
-                    ]
-                },
-                {
-                    "ids": { "": "SINGLETONMARY" },
-                    "patients": [
-                        {
-                            "ids": { "": "MARY" },
-                            "specimens": [
-                                {
-                                    "htsgetId": "30F9F3FED8F711ED8C35DBEF59E9F537",
-                                    "ids": { "": "HG00097" }
-                                }
-                            ]
-                        }
-                    ]
-                }
-            ]
-        }
-        "#.to_string()
-    }
-
-    fn example_elsa_response() -> String {
-        r#"
-        {
-            "location": {
-                "bucket": "elsa-data-tmp",
-                "key": "htsget-manifests/R004"
-            },
-            "maxAge": 86400
-        }
-        "#.to_string()
-    }
-
-    async fn with_test_mocks<T, F, Fut>(test: F, expect_times: T)
-    where
-        T: Into<Times>,
-        F: FnOnce(String, Client, reqwest::Client) -> Fut,
-          Fut: Future<Output = ()>, {
-        with_s3_test_server_tmp(|client, server_base_path| async move {
-            let mock_server = MockServer::start().await;
-
-            Mock::given(method("GET"))
-                .and(path(format!("{ENDPOINT_PATH}/R004")))
-                .and(query_param("type", "S3"))
-                .respond_with(move |_: &Request| {
-                    let manifest_path = server_base_path.join("elsa-data-tmp/htsget-manifests");
-
-                    fs::create_dir_all(&manifest_path).unwrap();
-                    fs::write(&manifest_path.join("R004"), example_elsa_manifest()).unwrap();
-
-                    ResponseTemplate::new(200)
-                        .set_body_string(example_elsa_response())
-                })
-                .expect(expect_times)
-                .mount(&mock_server)
-                .await;
-
-            test(mock_server.address().to_string(), client, reqwest::Client::builder()
-                .build().unwrap()).await;
-        }).await;
     }
 }

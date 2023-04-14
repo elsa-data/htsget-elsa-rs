@@ -1,0 +1,5 @@
+[workspace]
+members = [
+    "htsget-elsa",
+    "htsget-elsa-lambda"
+]

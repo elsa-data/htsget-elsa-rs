@@ -1,0 +1,14 @@
+[package]
+name = "htsget-elsa"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-trait = "0.1"
+http = "0.2"
+reqwest = { version = "0.11", features = ["rustls-tls"] }
+thiserror = "1.0"
+aws-config = "0.54"
+aws-sdk-dynamodb = "0.24"
+
+htsget-config = { git = "https://github.com/umccr/htsget-rs.git", branch = "feat/htsget-elsa"}

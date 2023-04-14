@@ -12,5 +12,5 @@ tracing = "0.1"
 http-serde = "1.1"
 http = "0.2"
 
-htsget-config = { git = "https://github.com/umccr/htsget-rs.git", branch = "feat/htsget-elsa"}
-htsget-lambda = { git = "https://github.com/umccr/htsget-rs.git", branch = "feat/htsget-elsa"}
+htsget-config = { git = "https://github.com/umccr/htsget-rs.git", branch = "feat/htsget-elsa" }
+htsget-lambda = { git = "https://github.com/umccr/htsget-rs.git", branch = "feat/htsget-elsa" }

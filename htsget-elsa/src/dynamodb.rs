@@ -1,4 +1,4 @@
-use crate::Cache;
+use crate::{Cache, Error, Result};
 use async_trait::async_trait;
 use aws_sdk_dynamodb::Client;
 
@@ -20,13 +20,14 @@ impl DynamoDBCache {
 
 #[async_trait]
 impl Cache for DynamoDBCache {
+    type Error = Error;
     type Item = ();
 
-    async fn get<K: AsRef<str> + Send>(&self, key: K) -> Self::Item {
+    async fn get<K: AsRef<str> + Send>(&self, key: K) -> Result<Self::Item> {
         todo!()
     }
 
-    async fn put<K: AsRef<str> + Send>(&self, key: K, item: Self::Item, expirey: u64) {
+    async fn put<K: AsRef<str> + Send>(&self, key: K, item: Self::Item, expiry: u64) {
         todo!()
     }
 }

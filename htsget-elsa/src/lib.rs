@@ -15,21 +15,26 @@ pub enum Error {
     #[error("invalid client: `{0}`")]
     InvalidClient(reqwest::Error),
     #[error("invalid uri constructed from release key: `{0}`")]
-    InvalidUri(String),
+    InvalidReleaseUri(String),
     #[error("failed to get manifest from Elsa: `{0}`")]
     GetGetManifest(reqwest::Error),
     #[error("failed to deserialize type: `{0}")]
     DeserializeError(String),
     #[error("failed to get object from storage: `{0}`")]
     GetObjectError(String),
+    #[error("invalid uri received from manifest: `{0}`")]
+    InvalidManifestUri(String),
+    #[error("unsupported component of manifest: `{0}`")]
+    UnsupportedManifestFeature(String),
 }
 
 #[async_trait]
 pub trait Cache {
+    type Error;
     type Item;
 
-    async fn get<K: AsRef<str> + Send>(&self, key: K) -> Self::Item;
-    async fn put<K: AsRef<str> + Send>(&self, key: K, item: Self::Item, expirey: u64);
+    async fn get<K: AsRef<str> + Send>(&self, key: K) -> result::Result<Self::Item, Self::Error>;
+    async fn put<K: AsRef<str> + Send>(&self, key: K, item: Self::Item, expiry: u64);
 }
 
 #[async_trait]
@@ -44,8 +49,8 @@ pub trait GetObject {
 }
 
 #[async_trait]
-pub trait ResolverFromElsa {
+pub trait ResolversFromElsa {
     type Error;
 
-    async fn try_get(&self, release_key: String) -> result::Result<Resolver, Self::Error>;
+    async fn try_get(&self, release_key: String) -> result::Result<Vec<Resolver>, Self::Error>;
 }

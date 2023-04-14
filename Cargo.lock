@@ -1229,10 +1229,12 @@ dependencies = [
  "async-trait",
  "aws-config",
  "aws-sdk-dynamodb",
+ "aws-sdk-s3",
  "htsget-config",
  "http",
  "reqwest",
  "serde",
+ "serde_json",
  "thiserror",
 ]
 

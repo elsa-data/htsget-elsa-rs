@@ -1,29 +1,13 @@
-use crate::elsa_endpoint::Error::{DeserializeResponseError, GetError, InvalidUri};
-use crate::{Cache, ResolverFromElsa};
+use crate::Error::{DeserializeError, GetGetManifest, InvalidUri};
+use crate::{Cache, Error, GetObject, ResolverFromElsa, Result};
 use async_trait::async_trait;
 use htsget_config::resolver::Resolver;
 use http::uri::Authority;
 use reqwest::{Client, Url};
 use serde::Deserialize;
-use std::result;
-use std::sync::mpsc::SendError;
-use thiserror::Error;
+use std::collections::HashMap;
 
 const ENDPOINT_PATH: &str = "/manifest/htsget";
-
-pub type Result<T> = result::Result<T, Error>;
-
-#[derive(Error, Debug)]
-pub enum Error {
-    #[error("invalid client: `{0}`")]
-    InvalidClient(reqwest::Error),
-    #[error("invalid uri constructed from release key: `{0}`")]
-    InvalidUri(String),
-    #[error("failed to get uri: `{0}`")]
-    GetError(reqwest::Error),
-    #[error("failed to deserialize response: `{0}`")]
-    DeserializeResponseError(reqwest::Error),
-}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -39,32 +23,67 @@ pub struct ElsaResponse {
     max_age: u64,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ElsaReadsManifest {
+    url: String,
+    restriction: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ElsaVariantsManifest {
+    url: String,
+    variant_sample_id: String,
+    restriction: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ElsaRestrictionsManifest {}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ElsaManifest {
+    #[serde(alias = "id")]
+    release_key: String,
+    reads: HashMap<String, ElsaReadsManifest>,
+    variants: HashMap<String, ElsaVariantsManifest>,
+    restrictions: ElsaRestrictionsManifest,
+}
+
 #[derive(Debug)]
-pub struct ElsaEndpoint<C> {
+pub struct ElsaEndpoint<C, S> {
     endpoint: Authority,
     client: Client,
     cache: C,
+    get_object: S,
 }
 
 #[async_trait]
-impl<C> ResolverFromElsa for ElsaEndpoint<C>
+impl<C, S> ResolverFromElsa for ElsaEndpoint<C, S>
 where
     C: Cache + Send + Sync,
+    S: GetObject + Send + Sync,
 {
-    async fn get(&self) -> Resolver {
+    type Error = Error;
+
+    async fn try_get(&self, release_key: String) -> Result<Resolver> {
         todo!()
     }
 }
 
-impl<C> ElsaEndpoint<C>
+impl<C, S> ElsaEndpoint<C, S>
 where
     C: Cache,
+    S: GetObject,
 {
-    pub fn new(endpoint: Authority, cache: C) -> Result<Self> {
+    pub fn new(endpoint: Authority, cache: C, get_object: S) -> Result<Self> {
         Ok(Self {
             endpoint,
             client: Self::create_client()?,
             cache,
+            get_object,
         })
     }
 
@@ -76,7 +95,7 @@ where
             .map_err(|err| Error::InvalidClient(err))
     }
 
-    pub async fn get_manifest(&self, release_key: String) -> Result<ElsaResponse> {
+    pub async fn get_response(&self, release_key: String) -> Result<ElsaResponse> {
         let uri = http::Uri::builder()
             .scheme("https")
             .authority(self.endpoint.as_str())
@@ -90,9 +109,13 @@ where
             .get(uri)
             .send()
             .await
-            .map_err(|err| GetError(err))?
+            .map_err(|err| GetGetManifest(err))?
             .json()
             .await
-            .map_err(|err| DeserializeResponseError(err))
+            .map_err(|err| DeserializeError(err.to_string()))
+    }
+
+    pub async fn get_manifest(&self, response: ElsaResponse) -> Result<ElsaResponse> {
+        todo!()
     }
 }

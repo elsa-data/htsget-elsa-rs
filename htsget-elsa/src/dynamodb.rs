@@ -26,7 +26,7 @@ impl Cache for DynamoDBCache {
         todo!()
     }
 
-    async fn put<K: AsRef<str> + Send>(&self, key: K, item: Self::Item) {
+    async fn put<K: AsRef<str> + Send>(&self, key: K, item: Self::Item, expirey: u64) {
         todo!()
     }
 }

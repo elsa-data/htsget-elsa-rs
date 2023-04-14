@@ -22,30 +22,35 @@ pub async fn handle_request(config: Config) -> Result<(), Error> {
             info!(event = ?event, "received request");
 
             match Route::try_from(&event) {
-                Ok(route) => {
-                    let s3 = S3::new_with_default_config(config.cache_location().to_string()).await;
-                    let elsa_endpoint =
-                        match ElsaEndpoint::new(config.elsa_endpoint().clone(), &s3, &s3) {
-                            Ok(elsa_endpoint) => elsa_endpoint,
-                            Err(err) => {
-                                return Response::builder()
-                                    .status(StatusCode::INTERNAL_SERVER_ERROR)
-                                    .body(Body::from(err.to_string()));
-                            }
-                        };
-
-                    let resolver = get_resolvers(&config, &route, &elsa_endpoint).await?;
-                    let router = Router::new(
-                        Arc::new(resolver),
-                        &config.htsget_config().ticket_server().service_info(),
-                    );
-                    router.route_request_with_route(event, route).await
-                }
+                Ok(route) => route_request(&config, event, route).await,
                 Err(err) => err,
             }
         },
     )
     .await
+}
+
+async fn route_request(
+    config: &Config,
+    event: Request,
+    route: Route,
+) -> http::Result<Response<Body>> {
+    let s3 = S3::new_with_default_config(config.cache_location().to_string()).await;
+    let elsa_endpoint = match ElsaEndpoint::new(config.elsa_endpoint().clone(), &s3, &s3) {
+        Ok(elsa_endpoint) => elsa_endpoint,
+        Err(err) => {
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::from(err.to_string()));
+        }
+    };
+
+    let resolver = get_resolvers(&config, &route, &elsa_endpoint).await?;
+    let router = Router::new(
+        Arc::new(resolver),
+        &config.htsget_config().ticket_server().service_info(),
+    );
+    router.route_request_with_route(event, route).await
 }
 
 #[instrument(level = "debug", skip(elsa_endpoint), ret)]

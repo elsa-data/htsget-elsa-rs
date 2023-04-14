@@ -1,5 +1,5 @@
 use crate::Error::{
-    DeserializeError, GetGetManifest, InvalidManifestUri, InvalidReleaseUri,
+    DeserializeError, GetManifest, InvalidManifestUri, InvalidReleaseUri,
     UnsupportedManifestFeature,
 };
 use crate::{Cache, Error, GetObject, ResolversFromElsa, Result};
@@ -16,23 +16,24 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use tracing::{debug, instrument};
 
-const ENDPOINT_PATH: &str = "/manifest/htsget";
+const ENDPOINT_PATH: &str = "/api/manifest/htsget";
+const CACHE_PATH: &str = "htsget-manifest-cache";
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ElsaLocation {
     bucket: String,
     key: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ElsaResponse {
     location: ElsaLocation,
     max_age: u64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ElsaReadsManifest {
     url: String,
@@ -40,7 +41,7 @@ pub struct ElsaReadsManifest {
     restriction: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ElsaVariantsManifest {
     url: String,
@@ -49,11 +50,11 @@ pub struct ElsaVariantsManifest {
     restriction: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ElsaRestrictionsManifest {}
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ElsaManifest {
     #[serde(alias = "id")]
@@ -175,7 +176,7 @@ where
                 let resolvers: Vec<Resolver> = self.get_manifest(response).await?.try_into()?;
 
                 self.cache
-                    .put(&release_key, resolvers.clone(), max_age)
+                    .put(format!("{CACHE_PATH}/{release_key}"), resolvers.clone(), max_age)
                     .await?;
 
                 Ok(resolvers)
@@ -190,12 +191,16 @@ where
     S: GetObject<Error = Error>,
 {
     pub fn new(endpoint: Authority, cache: &'a C, get_object: &'a S) -> Result<Self> {
-        Ok(Self {
+        Ok(Self::new_with_client(Self::create_client()?, endpoint, cache, get_object))
+    }
+
+    fn new_with_client(client: Client, endpoint: Authority, cache: &'a C, get_object: &'a S) -> Self {
+        Self {
             endpoint,
-            client: Self::create_client()?,
+            client,
             cache,
             get_object,
-        })
+        }
     }
 
     fn create_client() -> Result<Client> {
@@ -206,25 +211,32 @@ where
             .map_err(|err| Error::InvalidClient(err))
     }
 
-    #[instrument(level = "debug", skip(self), ret)]
-    pub async fn get_response(&self, release_key: &str) -> Result<ElsaResponse> {
+    async fn get_response_with_scheme(&self, release_key: &str, scheme: &str) -> Result<ElsaResponse> {
         let uri = Uri::builder()
-            .scheme("https")
+            .scheme(scheme)
             .authority(self.endpoint.as_str())
-            .path_and_query(format!("{}/{}?type=S3", ENDPOINT_PATH, release_key))
+            .path_and_query(format!("{ENDPOINT_PATH}/{release_key}?type=S3"))
             .build()
             .map(|uri| Url::parse(&uri.to_string()))
             .map_err(|_| InvalidReleaseUri(release_key.to_string()))?
             .map_err(|_| InvalidReleaseUri(release_key.to_string()))?;
 
-        self.client
+        let response = self.client
             .get(uri)
             .send()
             .await
-            .map_err(|err| GetGetManifest(err))?
-            .json()
-            .await
-            .map_err(|err| DeserializeError(err.to_string()))
+            .map_err(|err| GetManifest(err.to_string()))?;
+
+        if response.status().is_success() {
+            response.json().await.map_err(|err| DeserializeError(err.to_string()))
+        } else {
+            Err(GetManifest(format!("status code {}", response.status())))
+        }
+    }
+
+    #[instrument(level = "debug", skip(self), ret)]
+    pub async fn get_response(&self, release_key: &str) -> Result<ElsaResponse> {
+        self.get_response_with_scheme(release_key, "https").await
     }
 
     #[instrument(level = "debug", skip(self), ret)]
@@ -232,5 +244,52 @@ where
         self.get_object
             .get_object(response.location.bucket, response.location.key)
             .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::future::Future;
+    use std::str::FromStr;
+    use aws_sdk_s3::Client;
+    use http::uri::Authority;
+    use mockito::Server;
+    use htsget_test::aws_mocks::with_s3_test_server_tmp;
+    use crate::elsa_endpoint::{ElsaEndpoint, ElsaLocation, ElsaResponse, ENDPOINT_PATH};
+    use crate::s3::S3;
+
+    #[tokio::test]
+    async fn get_response() {
+        with_test_mocks(|endpoint, s3_client, reqwest_client| async move {
+            let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+            let endpoint = ElsaEndpoint::new_with_client(reqwest_client, Authority::from_str(&endpoint).unwrap(), &s3, &s3);
+
+            let response = endpoint.get_response_with_scheme("R001", "http").await.unwrap();
+            assert_eq!(response, ElsaResponse {
+                location: ElsaLocation {
+                    bucket: "elsa-data-tmp".to_string(),
+                    key: "R001".to_string(),
+                },
+                max_age: 86400,
+            });
+        }).await;
+    }
+
+    async fn with_test_mocks<F, Fut>(test: F)
+    where F: FnOnce(String, Client, reqwest::Client) -> Fut,
+          Fut: Future<Output = ()>, {
+        with_s3_test_server_tmp(|client| async move {
+            let mut server = Server::new_async().await;
+
+            let mock = server.mock("GET", format!("{ENDPOINT_PATH}/R001?type=S3").as_str())
+                .with_status(200)
+                .with_body(r#"{"location":{"bucket":"elsa-data-tmp","key":"R001"},"maxAge":86400}"#)
+                .create();
+
+            test(server.host_with_port(), client, reqwest::Client::builder()
+                .build().unwrap()).await;
+
+            mock.assert_async().await;
+        }).await;
     }
 }

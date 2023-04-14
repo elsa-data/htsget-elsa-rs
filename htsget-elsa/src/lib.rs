@@ -17,7 +17,7 @@ pub enum Error {
     #[error("invalid uri constructed from release key: `{0}`")]
     InvalidReleaseUri(String),
     #[error("failed to get manifest from Elsa: `{0}`")]
-    GetGetManifest(reqwest::Error),
+    GetManifest(String),
     #[error("failed to deserialize: `{0}")]
     DeserializeError(String),
     #[error("failed to serialize: `{0}")]

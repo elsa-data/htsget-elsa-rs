@@ -1,14 +1,14 @@
 use crate::Error::{DeserializeError, GetObjectError, PutObjectError, SerializeError};
 use crate::{Cache, Error, GetObject, Result};
 use async_trait::async_trait;
-use aws_sdk_s3::primitives::{ByteStream, DateTime};
-use aws_sdk_s3::Client;
 use bytes::Bytes;
 use htsget_config::resolver::Resolver;
 use serde::{Deserialize, Serialize};
 use serde_json::{from_slice, to_string, to_vec};
 use std::ops::Add;
 use std::time::{Duration, SystemTime};
+use aws_sdk_s3::Client;
+use aws_sdk_s3::types::{ByteStream, DateTime};
 use tracing::instrument;
 
 #[derive(Debug)]

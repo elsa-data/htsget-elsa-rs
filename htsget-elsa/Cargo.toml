@@ -23,3 +23,4 @@ htsget-test = { git = "https://github.com/umccr/htsget-rs.git", branch = "feat/h
 
 tokio = { version = "1.25", features = ["macros", "rt-multi-thread"] }
 mockito = "1.0"
+wiremock = "0.5"

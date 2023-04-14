@@ -14,3 +14,5 @@ http = "0.2"
 
 htsget-config = { git = "https://github.com/umccr/htsget-rs.git", branch = "feat/htsget-elsa" }
 htsget-lambda = { git = "https://github.com/umccr/htsget-rs.git", branch = "feat/htsget-elsa" }
+
+htsget-elsa = { version = "0.1", path = "../htsget-elsa" }

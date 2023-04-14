@@ -3,6 +3,7 @@ pub mod s3;
 
 use async_trait::async_trait;
 use htsget_config::resolver::Resolver;
+use http::Response;
 use serde::Deserialize;
 use std::result;
 use thiserror::Error;

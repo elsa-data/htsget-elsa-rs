@@ -14,6 +14,7 @@ use reqwest::{Client, Url};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::str::FromStr;
+use tracing::{debug, instrument};
 
 const ENDPOINT_PATH: &str = "/manifest/htsget";
 
@@ -63,6 +64,7 @@ pub struct ElsaManifest {
 }
 
 impl ElsaManifest {
+    #[instrument(level = "trace", ret)]
     pub fn resolver_from_manifest_parts(
         release_key: &str,
         url: &str,
@@ -112,6 +114,7 @@ impl ElsaManifest {
 impl TryFrom<ElsaManifest> for Vec<Resolver> {
     type Error = Error;
 
+    #[instrument(level = "trace", ret)]
     fn try_from(manifest: ElsaManifest) -> Result<Self> {
         let release_key = manifest.release_key;
 
@@ -144,25 +147,28 @@ impl TryFrom<ElsaManifest> for Vec<Resolver> {
 }
 
 #[derive(Debug)]
-pub struct ElsaEndpoint<C, S> {
+pub struct ElsaEndpoint<'a, C, S> {
     endpoint: Authority,
     client: Client,
-    cache: C,
-    get_object: S,
+    cache: &'a C,
+    get_object: &'a S,
 }
 
 #[async_trait]
-impl<C, S> ResolversFromElsa for ElsaEndpoint<C, S>
+impl<'a, C, S> ResolversFromElsa for ElsaEndpoint<'a, C, S>
 where
     C: Cache<Item = Vec<Resolver>, Error = Error> + Send + Sync,
     S: GetObject<Error = Error> + Send + Sync,
 {
     type Error = Error;
 
+    #[instrument(level = "debug", skip_all)]
     async fn try_get(&self, release_key: String) -> Result<Vec<Resolver>> {
         match self.cache.get(&release_key).await {
             Ok(Some(cached)) => Ok(cached),
             _ => {
+                debug!("no cached response, fetching from elsa");
+
                 let response = self.get_response(&release_key).await?;
                 let max_age = response.max_age;
 
@@ -178,12 +184,12 @@ where
     }
 }
 
-impl<C, S> ElsaEndpoint<C, S>
+impl<'a, C, S> ElsaEndpoint<'a, C, S>
 where
     C: Cache<Item = Vec<Resolver>, Error = Error>,
     S: GetObject<Error = Error>,
 {
-    pub fn new(endpoint: Authority, cache: C, get_object: S) -> Result<Self> {
+    pub fn new(endpoint: Authority, cache: &'a C, get_object: &'a S) -> Result<Self> {
         Ok(Self {
             endpoint,
             client: Self::create_client()?,
@@ -200,8 +206,9 @@ where
             .map_err(|err| Error::InvalidClient(err))
     }
 
+    #[instrument(level = "debug", skip(self), ret)]
     pub async fn get_response(&self, release_key: &str) -> Result<ElsaResponse> {
-        let uri = http::Uri::builder()
+        let uri = Uri::builder()
             .scheme("https")
             .authority(self.endpoint.as_str())
             .path_and_query(format!("{}/{}?type=S3", ENDPOINT_PATH, release_key))
@@ -220,6 +227,7 @@ where
             .map_err(|err| DeserializeError(err.to_string()))
     }
 
+    #[instrument(level = "debug", skip(self), ret)]
     pub async fn get_manifest(&self, response: ElsaResponse) -> Result<ElsaManifest> {
         self.get_object
             .get_object(response.location.bucket, response.location.key)

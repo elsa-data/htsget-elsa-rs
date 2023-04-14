@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{from_slice, to_string, to_vec};
 use std::ops::Add;
 use std::time::{Duration, SystemTime};
+use tracing::instrument;
 
 #[derive(Debug)]
 pub struct S3 {
@@ -87,6 +88,7 @@ impl Cache for S3 {
     type Error = Error;
     type Item = Vec<Resolver>;
 
+    #[instrument(level = "trace", skip_all, ret)]
     async fn get<K: AsRef<str> + Send + Sync>(&self, key: K) -> Result<Option<Self::Item>> {
         let (object, last_modified): (CacheItem, _) = self
             .get_object(self.cache_bucket.clone(), key.as_ref())
@@ -106,6 +108,7 @@ impl Cache for S3 {
         }
     }
 
+    #[instrument(level = "trace", skip_all, ret)]
     async fn put<K: AsRef<str> + Send + Sync>(
         &self,
         key: K,

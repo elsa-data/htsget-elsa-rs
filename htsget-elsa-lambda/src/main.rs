@@ -5,18 +5,18 @@ use std::sync::Arc;
 
 use lambda_http::Error;
 
+use htsget_elsa_lambda::config::Config;
 use htsget_elsa_lambda::handle_request;
-use htsget_lambda::Config;
+use htsget_lambda::Config as HtsgetConfig;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    Config::setup_tracing()?;
+    HtsgetConfig::setup_tracing()?;
 
-    if let Some(path) = Config::parse_args() {
-        let cors: CorsConfig = from_path(&path)?;
-        let service_info: ServiceInfo = from_path(&path)?;
+    if let Some(path) = HtsgetConfig::parse_args() {
+        let config: Config = from_path(&path)?;
 
-        handle_request(cors, &service_info).await
+        handle_request(config).await
     } else {
         Ok(())
     }

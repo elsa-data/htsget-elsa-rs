@@ -1,19 +1,17 @@
-use crate::Error::{DeserializeError, GetObjectError, PutObjectError, SerializeError};
-use crate::{Cache, Error, GetObject, Result};
+use std::ops::Sub;
+use std::time::{Duration, SystemTime};
+
 use async_trait::async_trait;
-use aws_sdk_s3::error::HeadObjectError;
-use aws_sdk_s3::output::HeadObjectOutput;
-use aws_sdk_s3::types::{ByteStream, DateTime, SdkError};
+use aws_sdk_s3::types::{ByteStream, DateTime};
 use aws_sdk_s3::Client;
-use aws_sdk_s3::Error::NotFound;
 use bytes::Bytes;
 use htsget_config::resolver::Resolver;
 use serde::{Deserialize, Serialize};
-use serde_json::{from_slice, to_string, to_vec};
-use std::ops::{Add, Sub};
-use std::result;
-use std::time::{Duration, SystemTime};
+use serde_json::{from_slice, to_vec};
 use tracing::instrument;
+
+use crate::Error::{DeserializeError, GetObjectError, PutObjectError, SerializeError};
+use crate::{Cache, Error, GetObject, Result};
 
 #[derive(Debug)]
 pub struct S3 {
@@ -79,7 +77,7 @@ impl S3 {
             .map_err(|err| GetObjectError(err.to_string()))?
             .into_bytes();
 
-        Ok(from_slice(output.as_ref()).map_err(|err| DeserializeError(err.to_string()))?)
+        from_slice(output.as_ref()).map_err(|err| DeserializeError(err.to_string()))
     }
 }
 
@@ -147,16 +145,13 @@ impl Cache for S3 {
 
 #[cfg(test)]
 mod tests {
-    use crate::elsa_endpoint::{ElsaEndpoint, ElsaManifest};
+    use serde_json::{from_str, to_string};
+    use std::fs;
+
+    use crate::elsa_endpoint::ElsaManifest;
     use crate::s3::{CacheItem, S3};
     use crate::tests::{example_elsa_manifest, with_test_mocks, write_example_manifest};
     use crate::Cache;
-    use http::uri::Authority;
-    use serde_json::{from_str, to_string};
-    use std::fs;
-    use std::str::FromStr;
-    use std::time::Duration;
-    use tokio::time::sleep;
 
     #[tokio::test]
     async fn last_modified() {
@@ -244,7 +239,7 @@ mod tests {
                 let manifest_path = base_path.join("elsa-data-tmp/htsget-manifests");
                 fs::create_dir_all(&manifest_path).unwrap();
                 fs::write(
-                    &manifest_path.join("R004"),
+                    manifest_path.join("R004"),
                     to_string(&CacheItem {
                         item: vec![],
                         max_age: 1000,
@@ -270,7 +265,7 @@ mod tests {
                 let manifest_path = base_path.join("elsa-data-tmp/htsget-manifests");
                 fs::create_dir_all(&manifest_path).unwrap();
                 fs::write(
-                    &manifest_path.join("R004"),
+                    manifest_path.join("R004"),
                     to_string(&CacheItem {
                         item: vec![],
                         max_age: 0,
@@ -296,7 +291,7 @@ mod tests {
                 let manifest_path = base_path.join("elsa-data-tmp/htsget-manifests");
                 fs::create_dir_all(&manifest_path).unwrap();
                 fs::write(
-                    &manifest_path.join("R004"),
+                    manifest_path.join("R004"),
                     to_string(&CacheItem {
                         item: vec![],
                         max_age: 1000,
@@ -325,7 +320,7 @@ mod tests {
                 s3.put("htsget-manifests/R004", vec![], 1000).await.unwrap();
 
                 let result: CacheItem = from_str(
-                    &fs::read_to_string(&manifest_path.join("htsget-manifests/R004")).unwrap(),
+                    &fs::read_to_string(manifest_path.join("htsget-manifests/R004")).unwrap(),
                 )
                 .unwrap();
 

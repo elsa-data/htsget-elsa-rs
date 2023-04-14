@@ -1,9 +1,10 @@
+use std::io;
+use std::path::Path;
+
 use htsget_config::config::parser::from_path;
 use htsget_config::config::Config as HtsGetConfig;
 use http::uri::Authority;
 use serde::{Deserialize, Serialize};
-use std::io;
-use std::path::Path;
 use tracing::instrument;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

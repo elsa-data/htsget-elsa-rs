@@ -1,17 +1,17 @@
-use crate::config::Config;
-use htsget_config::config::cors::CorsConfig;
-use htsget_config::config::ServiceInfo;
+use std::sync::Arc;
+
 use htsget_config::resolver::Resolver;
-use htsget_elsa::elsa_endpoint::ElsaEndpoint;
-use htsget_elsa::s3::S3;
-use htsget_elsa::{Cache, GetObject, ResolversFromElsa};
-use htsget_lambda::handlers::FormatJson;
 use htsget_lambda::RouteType::Id;
 use htsget_lambda::{handle_request_service_fn, Route, Router};
 use http::{Response, StatusCode};
 use lambda_http::{Body, Error, Request};
-use std::sync::Arc;
 use tracing::{info, instrument, warn};
+
+use htsget_elsa::elsa_endpoint::ElsaEndpoint;
+use htsget_elsa::s3::S3;
+use htsget_elsa::{Cache, GetObject, ResolversFromElsa};
+
+use crate::config::Config;
 
 pub mod config;
 
@@ -45,10 +45,10 @@ async fn route_request(
         }
     };
 
-    let resolver = get_resolvers(&config, &route, &elsa_endpoint).await?;
+    let resolver = get_resolvers(config, &route, &elsa_endpoint).await?;
     let router = Router::new(
         Arc::new(resolver),
-        &config.htsget_config().ticket_server().service_info(),
+        config.htsget_config().ticket_server().service_info(),
     );
     router.route_request_with_route(event, route).await
 }
@@ -64,7 +64,7 @@ where
     S: GetObject<Error = htsget_elsa::Error> + Send + Sync,
 {
     if let Id(id) = route.route_type() {
-        if let Some(release_key) = id.split("/").collect::<Vec<&str>>().first() {
+        if let Some(release_key) = id.split('/').collect::<Vec<&str>>().first() {
             if let Ok(mut resolvers) = elsa_endpoint.try_get(release_key.to_string()).await {
                 resolvers.append(&mut config.htsget_config().resolvers().to_vec());
 

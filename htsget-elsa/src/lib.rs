@@ -1,12 +1,12 @@
-pub mod elsa_endpoint;
-pub mod s3;
+use std::result;
 
 use async_trait::async_trait;
 use htsget_config::resolver::Resolver;
-use http::Response;
 use serde::Deserialize;
-use std::result;
 use thiserror::Error;
+
+pub mod elsa_endpoint;
+pub mod s3;
 
 pub type Result<T> = result::Result<T, Error>;
 
@@ -71,12 +71,13 @@ pub trait ResolversFromElsa {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use crate::elsa_endpoint::ENDPOINT_PATH;
-    use aws_sdk_s3::Client;
-    use htsget_test::aws_mocks::with_s3_test_server_tmp;
     use std::fs;
     use std::future::Future;
     use std::path::{Path, PathBuf};
+
+    use crate::elsa_endpoint::ENDPOINT_PATH;
+    use aws_sdk_s3::Client;
+    use htsget_test::aws_mocks::with_s3_test_server_tmp;
     use wiremock::matchers::{method, path, query_param};
     use wiremock::{Mock, MockServer, Request, ResponseTemplate, Times};
 
@@ -152,8 +153,8 @@ pub(crate) mod tests {
     }
 
     pub(crate) fn write_example_manifest(manifest_path: &Path) {
-        fs::create_dir_all(&manifest_path).unwrap();
-        fs::write(&manifest_path.join("R004"), example_elsa_manifest()).unwrap();
+        fs::create_dir_all(manifest_path).unwrap();
+        fs::write(manifest_path.join("R004"), example_elsa_manifest()).unwrap();
     }
 
     pub(crate) async fn with_test_mocks<T, F, Fut>(test: F, expect_times: T)

@@ -1,19 +1,20 @@
-use crate::Error::{
-    DeserializeError, GetManifest, InvalidManifest, InvalidReleaseUri, UnsupportedManifestFeature,
-};
-use crate::{Cache, Error, GetObject, ResolversFromElsa, Result};
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use htsget_config::resolver::{AllowGuard, Resolver};
 use htsget_config::storage::s3::S3Storage;
 use htsget_config::storage::Storage;
 use htsget_config::types::Format;
-use http::uri::{Authority, Parts, Scheme};
+use http::uri::Authority;
 use http::Uri;
 use reqwest::{Client, Url};
 use serde::Deserialize;
-use std::collections::HashMap;
-use std::str::FromStr;
 use tracing::{debug, instrument};
+
+use crate::Error::{
+    DeserializeError, GetManifest, InvalidManifest, InvalidReleaseUri, UnsupportedManifestFeature,
+};
+use crate::{Cache, Error, GetObject, ResolversFromElsa, Result};
 
 pub const ENDPOINT_PATH: &str = "/api/manifest/htsget";
 pub const CACHE_PATH: &str = "htsget-manifest-cache";
@@ -78,14 +79,14 @@ impl ElsaManifest {
             )),
         }?;
 
-        let (bucket, key) = match url.split_once("/") {
+        let (bucket, key) = match url.split_once('/') {
             Some(split) => Ok(split),
             None => Err(InvalidManifest(
                 "could not split url into bucket and object key".to_string(),
             )),
         }?;
 
-        if bucket == "" || key == "" {
+        if bucket.is_empty() || key.is_empty() {
             return Err(InvalidManifest("bucket or key is empty".to_string()));
         }
 
@@ -102,7 +103,7 @@ impl ElsaManifest {
             &key,
             AllowGuard::default().with_allow_formats(vec![format]),
         )
-        .map_err(|err| InvalidManifest(format!("failed to construct regex: {}", err.to_string())))
+        .map_err(|err| InvalidManifest(format!("failed to construct regex: {}", err)))
     }
 }
 
@@ -218,7 +219,7 @@ where
             .use_rustls_tls()
             .https_only(true)
             .build()
-            .map_err(|err| Error::InvalidClient(err))
+            .map_err(Error::InvalidClient)
     }
 
     async fn get_response_with_scheme(
@@ -268,25 +269,21 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::elsa_endpoint::{
-        ElsaEndpoint, ElsaLocation, ElsaManifest, ElsaResponse, CACHE_PATH, ENDPOINT_PATH,
-    };
-    use crate::s3::S3;
-    use crate::tests::{
-        example_elsa_manifest, example_elsa_response, with_test_mocks, write_example_manifest,
-    };
-    use crate::Error::{GetObjectError, InvalidManifest, UnsupportedManifestFeature};
-    use crate::{Cache, ResolversFromElsa};
+    use std::str::FromStr;
+
     use htsget_config::resolver::Resolver;
     use htsget_config::storage;
     use htsget_config::types::Format;
-    use http::response;
     use http::uri::Authority;
     use serde_json::from_str;
-    use std::iter::Iterator;
-    use std::str::FromStr;
-    use wiremock::matchers::{path, query_param};
-    use wiremock::{MockServer, Request, ResponseTemplate, Times};
+
+    use crate::elsa_endpoint::{
+        ElsaEndpoint, ElsaLocation, ElsaManifest, ElsaResponse, CACHE_PATH,
+    };
+    use crate::s3::S3;
+    use crate::tests::{example_elsa_manifest, example_elsa_response, with_test_mocks};
+    use crate::Error::{GetObjectError, InvalidManifest, UnsupportedManifestFeature};
+    use crate::{Cache, ResolversFromElsa};
 
     #[tokio::test]
     async fn get_response() {
@@ -368,7 +365,7 @@ mod tests {
     #[tokio::test]
     async fn try_get_cached() {
         with_test_mocks(
-            |endpoint, s3_client, reqwest_client, base_path| async move {
+            |endpoint, s3_client, reqwest_client, _| async move {
                 let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
                 let endpoint = ElsaEndpoint::new_with_client(
                     reqwest_client,
@@ -496,7 +493,7 @@ mod tests {
 
     fn is_resolver_from_parts(resolver: &Resolver) -> bool {
         resolver.regex().to_string() == "^R004/30F9F3FED8F711ED8C35DBEF59E9F537$"
-            && resolver.substitution_string().to_string() == "HG00097/HG00097"
+            && resolver.substitution_string() == "HG00097/HG00097"
             && matches!(resolver.storage(), storage::Storage::S3 { s3_storage } if s3_storage.bucket() == "umccr-10g-data-dev")
             && resolver.allow_formats() == [Format::Bam]
     }
@@ -504,22 +501,20 @@ mod tests {
     fn assert_manifest_resolvers(resolvers: Vec<Resolver>) {
         assert!(resolvers.iter().any(|resolver| {
             resolver.regex().to_string() == "^R004/30F9FFD4D8F711ED8C353BBCB8861211$" &&
-                resolver.substitution_string().to_string() == "HG00096/HG00096" &&
+                resolver.substitution_string() == "HG00096/HG00096" &&
                 matches!(resolver.storage(), storage::Storage::S3 { s3_storage } if s3_storage.bucket() == "umccr-10g-data-dev") &&
                 resolver.allow_formats() == [Format::Bam]
         }));
-        assert!(resolvers
-            .iter()
-            .any(|resolver| is_resolver_from_parts(resolver)));
+        assert!(resolvers.iter().any(is_resolver_from_parts));
         assert!(resolvers.iter().any(|resolver| {
             resolver.regex().to_string() == "^R004/30F9FFD4D8F711ED8C353BBCB8861211$" &&
-                resolver.substitution_string().to_string() == "HG00096/HG00096.hard-filtered" &&
+                resolver.substitution_string() == "HG00096/HG00096.hard-filtered" &&
                 matches!(resolver.storage(), storage::Storage::S3 { s3_storage } if s3_storage.bucket() == "umccr-10g-data-dev") &&
                 resolver.allow_formats() == [Format::Vcf]
         }));
         assert!(resolvers.iter().any(|resolver| {
             resolver.regex().to_string() == "^R004/30F9F3FED8F711ED8C35DBEF59E9F537$" &&
-                resolver.substitution_string().to_string() == "HG00097/HG00097.hard-filtered" &&
+                resolver.substitution_string() == "HG00097/HG00097.hard-filtered" &&
                 matches!(resolver.storage(), storage::Storage::S3 { s3_storage } if s3_storage.bucket() == "umccr-10g-data-dev") &&
                 resolver.allow_formats() == [Format::Vcf]
         }));

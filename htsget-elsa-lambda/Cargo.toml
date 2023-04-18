@@ -1,5 +1,6 @@
 [package]
 name = "htsget-elsa-lambda"
+authors = ["Marko Malenic <mmalenic1@gmail.com>"]
 version = "0.1.0"
 edition = "2021"
 
@@ -16,3 +17,8 @@ htsget-config = { git = "https://github.com/umccr/htsget-rs.git", branch = "feat
 htsget-lambda = { git = "https://github.com/umccr/htsget-rs.git", branch = "feat/htsget-elsa" }
 
 htsget-elsa = { version = "0.1", path = "../htsget-elsa" }
+
+[dev-dependencies]
+htsget-elsa = { version = "0.1", path = "../htsget-elsa", features = ["test-utils"] }
+htsget-search = { git = "https://github.com/umccr/htsget-rs.git", branch = "feat/htsget-elsa" }
+htsget-test = { git = "https://github.com/umccr/htsget-rs.git", branch = "feat/htsget-elsa", default-features = false, features = ["http-tests"] }

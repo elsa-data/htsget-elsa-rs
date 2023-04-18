@@ -145,12 +145,13 @@ impl Cache for S3 {
 
 #[cfg(test)]
 mod tests {
-    use serde_json::{from_str, to_string};
     use std::fs;
+
+    use serde_json::{from_str, to_string};
 
     use crate::elsa_endpoint::ElsaManifest;
     use crate::s3::{CacheItem, S3};
-    use crate::tests::{example_elsa_manifest, with_test_mocks, write_example_manifest};
+    use crate::test_utils::{example_elsa_manifest, with_test_mocks, write_example_manifest};
     use crate::Cache;
 
     #[tokio::test]

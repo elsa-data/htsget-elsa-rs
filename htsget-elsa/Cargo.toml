@@ -1,12 +1,18 @@
 [package]
 name = "htsget-elsa"
+authors = ["Marko Malenic <mmalenic1@gmail.com>"]
 version = "0.1.0"
 edition = "2021"
+
+[features]
+
+test-utils = ["htsget-test", "wiremock"]
+default = []
 
 [dependencies]
 async-trait = "0.1"
 http = "0.2"
-reqwest = { version = "0.11", features = ["rustls-tls", "json"] }
+reqwest = { version = "0.11", default-features = false, features = ["rustls-tls", "json"] }
 thiserror = "1.0"
 aws-config = "0.54"
 aws-sdk-s3 = "0.24"
@@ -18,8 +24,10 @@ tracing = "0.1"
 
 htsget-config = { git = "https://github.com/umccr/htsget-rs.git", branch = "feat/htsget-elsa" }
 
-[dev-dependencies]
-htsget-test = { git = "https://github.com/umccr/htsget-rs.git", branch = "feat/htsget-elsa", features = ["aws-mocks"] }
+htsget-test = { git = "https://github.com/umccr/htsget-rs.git", optional = true, branch = "feat/htsget-elsa", features = ["aws-mocks"] }
+wiremock = { version = "0.5", optional = true }
 
+[dev-dependencies]
 tokio = { version = "1.25", features = ["macros", "rt-multi-thread"] }
-wiremock = "0.5"
+
+htsget-elsa = { path = ".", features = ["test-utils"] }

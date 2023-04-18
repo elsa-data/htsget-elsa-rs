@@ -198,7 +198,8 @@ where
         ))
     }
 
-    fn new_with_client(
+    #[cfg(feature = "test-utils")]
+    pub fn new_with_client(
         client: Client,
         endpoint: Authority,
         cache: &'a C,
@@ -272,7 +273,6 @@ mod tests {
     use std::str::FromStr;
 
     use htsget_config::resolver::Resolver;
-    use htsget_config::storage;
     use htsget_config::types::Format;
     use http::uri::Authority;
     use serde_json::from_str;
@@ -281,7 +281,10 @@ mod tests {
         ElsaEndpoint, ElsaLocation, ElsaManifest, ElsaResponse, CACHE_PATH,
     };
     use crate::s3::S3;
-    use crate::tests::{example_elsa_manifest, example_elsa_response, with_test_mocks};
+    use crate::test_utils::{
+        example_elsa_manifest, example_elsa_response, is_manifest_resolvers,
+        is_resolver_from_parts, with_test_mocks,
+    };
     use crate::Error::{GetObjectError, InvalidManifest, UnsupportedManifestFeature};
     use crate::{Cache, ResolversFromElsa};
 
@@ -405,7 +408,7 @@ mod tests {
                     .exists());
                 let resolvers = endpoint.try_get("R004".to_string()).await.unwrap();
 
-                assert_manifest_resolvers(resolvers);
+                assert!(is_manifest_resolvers(resolvers));
                 assert!(base_path
                     .join(format!("elsa-data-tmp/{CACHE_PATH}/R004"))
                     .exists());
@@ -419,7 +422,7 @@ mod tests {
     fn resolvers_from_manifest() {
         let manifest: ElsaManifest = from_str(&example_elsa_manifest()).unwrap();
         let resolvers: Vec<Resolver> = manifest.try_into().unwrap();
-        assert_manifest_resolvers(resolvers);
+        assert!(is_manifest_resolvers(resolvers));
     }
 
     #[test]
@@ -489,34 +492,5 @@ mod tests {
             Format::Bam,
         );
         assert!(matches!(response, Err(InvalidManifest(_))));
-    }
-
-    fn is_resolver_from_parts(resolver: &Resolver) -> bool {
-        resolver.regex().to_string() == "^R004/30F9F3FED8F711ED8C35DBEF59E9F537$"
-            && resolver.substitution_string() == "HG00097/HG00097"
-            && matches!(resolver.storage(), storage::Storage::S3 { s3_storage } if s3_storage.bucket() == "umccr-10g-data-dev")
-            && resolver.allow_formats() == [Format::Bam]
-    }
-
-    fn assert_manifest_resolvers(resolvers: Vec<Resolver>) {
-        assert!(resolvers.iter().any(|resolver| {
-            resolver.regex().to_string() == "^R004/30F9FFD4D8F711ED8C353BBCB8861211$" &&
-                resolver.substitution_string() == "HG00096/HG00096" &&
-                matches!(resolver.storage(), storage::Storage::S3 { s3_storage } if s3_storage.bucket() == "umccr-10g-data-dev") &&
-                resolver.allow_formats() == [Format::Bam]
-        }));
-        assert!(resolvers.iter().any(is_resolver_from_parts));
-        assert!(resolvers.iter().any(|resolver| {
-            resolver.regex().to_string() == "^R004/30F9FFD4D8F711ED8C353BBCB8861211$" &&
-                resolver.substitution_string() == "HG00096/HG00096.hard-filtered" &&
-                matches!(resolver.storage(), storage::Storage::S3 { s3_storage } if s3_storage.bucket() == "umccr-10g-data-dev") &&
-                resolver.allow_formats() == [Format::Vcf]
-        }));
-        assert!(resolvers.iter().any(|resolver| {
-            resolver.regex().to_string() == "^R004/30F9F3FED8F711ED8C35DBEF59E9F537$" &&
-                resolver.substitution_string() == "HG00097/HG00097.hard-filtered" &&
-                matches!(resolver.storage(), storage::Storage::S3 { s3_storage } if s3_storage.bucket() == "umccr-10g-data-dev") &&
-                resolver.allow_formats() == [Format::Vcf]
-        }));
     }
 }

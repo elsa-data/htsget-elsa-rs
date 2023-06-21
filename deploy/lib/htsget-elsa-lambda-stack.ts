@@ -83,7 +83,7 @@ export class HtsgetElsaLambdaStack extends Stack {
       environment: {
         ...config.htsgetConfig,
         RUST_LOG:
-          "info,htsget_http_lambda=trace,htsget_config=trace,htsget_http_core=trace,htsget_search=trace",
+          "info,htsget_elsa=trace,htsget_elsa_lambda=trace,htsget_lambda=trace,htsget_config=trace,htsget_http=trace,htsget_search=trace",
       },
       buildEnvironment: {
         RUSTFLAGS: "-C target-cpu=neoverse-n1",
@@ -130,7 +130,7 @@ export class HtsgetElsaLambdaStack extends Stack {
     );
     new ARecord(this, id + "HtsgetElsaARecord", {
       zone: hostedZone,
-      recordName: "htsget.elsa",
+      recordName: "htsget-elsa",
       target: RecordTarget.fromAlias(
         new ApiGatewayv2DomainProperties(
           domainName.regionalDomainName,

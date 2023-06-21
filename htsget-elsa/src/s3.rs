@@ -166,7 +166,7 @@ mod tests {
                 let result = s3
                     .last_modified("elsa-data-tmp", "htsget-manifests/R004")
                     .await;
-                assert!(matches!(result, Some(_)));
+                assert!(result.is_some());
             },
             0,
         )
@@ -185,7 +185,7 @@ mod tests {
                 let result = s3
                     .last_modified("elsa-data-tmp", "htsget-manifests/R005")
                     .await;
-                assert!(matches!(result, None));
+                assert!(result.is_none());
             },
             0,
         )

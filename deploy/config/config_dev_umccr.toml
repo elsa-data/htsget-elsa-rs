@@ -4,7 +4,7 @@ cache_location = "elsa-tmp-bucket"
 ticket_server_cors_allow_headers = "All"
 ticket_server_cors_allow_origins = [
     "https://elsa-data.dev.umccr.org",
-    "https://elsa-data.dev.umccr.org",
+    "https://elsa-data.umccr.org",
 ]
 ticket_server_cors_allow_methods = "All"
 ticket_server_cors_allow_credentials = true

@@ -71,7 +71,7 @@ cargo install cargo-lambda
 npm install
 
 cd ..
-cargo lambda build --release --arm64 --bin htsget-lambda
+cargo lambda build --release --arm64 --bin htsget-elsa-lambda
 cd deploy
 ```
 

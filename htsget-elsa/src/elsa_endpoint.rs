@@ -189,13 +189,13 @@ where
     S: GetObject<Error = Error>,
 {
     pub fn new(endpoint: Authority, cache: &'a C, get_object: &'a S) -> Result<Self> {
-        Ok(Self::new_with_client(
-            Self::create_client()?,
+        Ok(Self {
+            client: Self::create_client()?,
             endpoint,
             cache,
             get_object,
-            "https",
-        ))
+            scheme: "https",
+        })
     }
 
     #[cfg(feature = "test-utils")]

@@ -1,12 +1,14 @@
+use std::collections::HashSet;
 use std::fs;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 
 use crate::elsa_endpoint::ENDPOINT_PATH;
 use aws_sdk_s3::Client;
+use htsget_config::resolver::ReferenceNames::List;
 use htsget_config::resolver::Resolver;
 use htsget_config::storage;
-use htsget_config::types::Format;
+use htsget_config::types::{Format, Interval};
 use htsget_test::aws_mocks::with_s3_test_server_tmp;
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, Request, ResponseTemplate, Times};
@@ -17,47 +19,82 @@ pub fn example_elsa_manifest() -> String {
             "id": "R004",
             "reads": {
                 "30F9F3FED8F711ED8C35DBEF59E9F537": {
-                    "url": "s3://umccr-10g-data-dev/HG00097/HG00097.bam"
+                    "url": "s3://umccr-10g-data-dev/HG00097/HG00097.bam",
+                    "restrictions": [
+                        {
+                            "chromosome": 1,
+                            "start": 1,
+                            "end": 10
+                        }
+                    ]
                 },
                 "30F9FFD4D8F711ED8C353BBCB8861211": {
-                    "url": "s3://umccr-10g-data-dev/HG00096/HG00096.bam"
+                    "url": "s3://umccr-10g-data-dev/HG00096/HG00096.bam",
+                    "restrictions": [
+                        {
+                            "chromosome": 2,
+                            "end": 10
+                        }
+                    ]
                 }
             },
             "variants": {
                 "30F9F3FED8F711ED8C35DBEF59E9F537": {
                     "url": "s3://umccr-10g-data-dev/HG00097/HG00097.hard-filtered.vcf.gz",
+                    "restrictions": [
+                        {
+                            "chromosome": 3,
+                            "start": 10
+                        }
+                    ],
                     "variantSampleId": ""
                 },
                 "30F9FFD4D8F711ED8C353BBCB8861211": {
                     "url": "s3://umccr-10g-data-dev/HG00096/HG00096.hard-filtered.vcf.gz",
+                    "restrictions": [
+                        {
+                            "chromosome": 4
+                        }
+                    ],
                     "variantSampleId": ""
                 }
             },
-            "restrictions": {},
             "cases": [
                 {
-                    "ids": { "": "SINGLETONCHARLES" },
+                    "ids": {
+                        "": "SINGLETONCHARLES"
+                    },
                     "patients": [
                         {
-                            "ids": { "": "CHARLES" },
+                            "ids": {
+                                "": "CHARLES"
+                            },
                             "specimens": [
                                 {
                                     "htsgetId": "30F9FFD4D8F711ED8C353BBCB8861211",
-                                    "ids": { "": "HG00096" }
+                                    "ids": {
+                                        "": "HG00096"
+                                    }
                                 }
                             ]
                         }
                     ]
                 },
                 {
-                    "ids": { "": "SINGLETONMARY" },
+                    "ids": {
+                        "": "SINGLETONMARY"
+                    },
                     "patients": [
                         {
-                            "ids": { "": "MARY" },
+                            "ids": {
+                                "": "MARY"
+                            },
                             "specimens": [
                                 {
                                     "htsgetId": "30F9F3FED8F711ED8C35DBEF59E9F537",
-                                    "ids": { "": "HG00097" }
+                                    "ids": {
+                                        "": "HG00097"
+                                    }
                                 }
                             ]
                         }
@@ -127,6 +164,8 @@ pub fn is_resolver_from_parts(resolver: &Resolver) -> bool {
         && resolver.substitution_string() == "HG00097/HG00097"
         && matches!(resolver.storage(), storage::Storage::S3 { s3_storage } if s3_storage.bucket() == "umccr-10g-data-dev")
         && resolver.allow_formats() == [Format::Bam]
+        && resolver.allow_reference_names() == &List(HashSet::from_iter(vec!["1".to_string()]))
+        && resolver.allow_interval() == Interval::new(Some(1), Some(10))
 }
 
 pub fn is_manifest_resolvers(resolvers: Vec<Resolver>) -> bool {
@@ -135,6 +174,8 @@ pub fn is_manifest_resolvers(resolvers: Vec<Resolver>) -> bool {
             resolver.substitution_string() == "HG00096/HG00096" &&
             matches!(resolver.storage(), storage::Storage::S3 { s3_storage } if s3_storage.bucket() == "umccr-10g-data-dev") &&
             resolver.allow_formats() == [Format::Bam]
+            && resolver.allow_reference_names() == &List(HashSet::from_iter(vec!["2".to_string()]))
+            && resolver.allow_interval() == Interval::new(None, Some(10))
     }) &&
     resolvers.iter().any(is_resolver_from_parts) &&
     resolvers.iter().any(|resolver| {
@@ -142,11 +183,15 @@ pub fn is_manifest_resolvers(resolvers: Vec<Resolver>) -> bool {
             resolver.substitution_string() == "HG00096/HG00096.hard-filtered" &&
             matches!(resolver.storage(), storage::Storage::S3 { s3_storage } if s3_storage.bucket() == "umccr-10g-data-dev") &&
             resolver.allow_formats() == [Format::Vcf]
+            && resolver.allow_reference_names() == &List(HashSet::from_iter(vec!["4".to_string()]))
+            && resolver.allow_interval() == Interval::new(None, None)
     }) &&
     resolvers.iter().any(|resolver| {
         resolver.regex().to_string() == "^R004/30F9F3FED8F711ED8C35DBEF59E9F537$" &&
             resolver.substitution_string() == "HG00097/HG00097.hard-filtered" &&
             matches!(resolver.storage(), storage::Storage::S3 { s3_storage } if s3_storage.bucket() == "umccr-10g-data-dev") &&
             resolver.allow_formats() == [Format::Vcf]
+            && resolver.allow_reference_names() == &List(HashSet::from_iter(vec!["3".to_string()]))
+            && resolver.allow_interval() == Interval::new(Some(10), None)
     })
 }

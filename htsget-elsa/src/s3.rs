@@ -8,7 +8,7 @@ use bytes::Bytes;
 use htsget_config::resolver::Resolver;
 use serde::{Deserialize, Serialize};
 use serde_json::{from_slice, to_vec};
-use tracing::instrument;
+use tracing::{instrument, trace};
 
 use crate::Error::{DeserializeError, GetObjectError, PutObjectError, SerializeError};
 use crate::{Cache, Error, GetObject, Result};
@@ -101,6 +101,8 @@ impl Cache for S3 {
 
     #[instrument(level = "trace", skip_all, ret)]
     async fn get<K: AsRef<str> + Send + Sync>(&self, key: K) -> Result<Option<Self::Item>> {
+        trace!(key = key.as_ref(), "getting key");
+
         if let Some(last_modified) = self
             .last_modified(self.cache_bucket.clone(), key.as_ref())
             .await
@@ -127,6 +129,8 @@ impl Cache for S3 {
         item: Self::Item,
         max_age: u64,
     ) -> Result<()> {
+        trace!(key = key.as_ref(), "putting key");
+
         self.s3_client
             .put_object()
             .bucket(self.cache_bucket.clone())
@@ -137,7 +141,12 @@ impl Cache for S3 {
             )))
             .send()
             .await
-            .map_err(|err| PutObjectError(err.to_string()))?;
+            .map_err(|err| {
+                let err = err.into_service_error();
+                trace!(err = err.message(), "put object error");
+
+                PutObjectError(err.to_string())
+            })?;
 
         Ok(())
     }

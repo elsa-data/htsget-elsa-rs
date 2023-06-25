@@ -1,10 +1,10 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use async_trait::async_trait;
-use htsget_config::resolver::{AllowGuard, Resolver};
+use htsget_config::resolver::{AllowGuard, ReferenceNames, Resolver};
 use htsget_config::storage::s3::S3Storage;
 use htsget_config::storage::Storage;
-use htsget_config::types::Format;
+use htsget_config::types::{Format, Interval};
 use http::uri::Authority;
 use http::Uri;
 use reqwest::{Client, Url};
@@ -38,7 +38,7 @@ pub struct ElsaResponse {
 pub struct ElsaReadsManifest {
     url: String,
     format: Option<Format>,
-    restriction: Option<String>,
+    restrictions: Vec<ElsaRestrictionManifest>,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
@@ -47,12 +47,16 @@ pub struct ElsaVariantsManifest {
     url: String,
     format: Option<Format>,
     variant_sample_id: String,
-    restriction: Option<String>,
+    restrictions: Vec<ElsaRestrictionManifest>,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub struct ElsaRestrictionsManifest {}
+pub struct ElsaRestrictionManifest {
+    chromosome: u8,
+    start: Option<u32>,
+    end: Option<u32>,
+}
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -61,7 +65,6 @@ pub struct ElsaManifest {
     release_key: String,
     reads: HashMap<String, ElsaReadsManifest>,
     variants: HashMap<String, ElsaVariantsManifest>,
-    restrictions: ElsaRestrictionsManifest,
 }
 
 impl ElsaManifest {
@@ -71,6 +74,7 @@ impl ElsaManifest {
         url: &str,
         id: &str,
         format: Format,
+        restriction: &ElsaRestrictionManifest,
     ) -> Result<Resolver> {
         let url = match (url.strip_prefix("s3://"), url.strip_prefix("S3://")) {
             (Some(url), _) | (_, Some(url)) => Ok(url),
@@ -101,7 +105,12 @@ impl ElsaManifest {
             },
             &format!("^{}/{}$", release_key, id),
             &key,
-            AllowGuard::default().with_allow_formats(vec![format]),
+            AllowGuard::default()
+                .with_allow_formats(vec![format])
+                .with_allow_reference_names(ReferenceNames::List(HashSet::from_iter(vec![
+                    restriction.chromosome.to_string(),
+                ])))
+                .with_allow_interval(Interval::new(restriction.start, restriction.end)),
         )
         .map_err(|err| InvalidManifest(format!("failed to construct regex: {}", err)))
     }
@@ -114,15 +123,31 @@ impl TryFrom<ElsaManifest> for Vec<Resolver> {
     fn try_from(manifest: ElsaManifest) -> Result<Self> {
         let release_key = manifest.release_key;
 
-        manifest
+        let get_resolvers =
+            |url: &str, id: &str, format: Format, restrictions: Vec<ElsaRestrictionManifest>| {
+                restrictions
+                    .iter()
+                    .map(|restriction| {
+                        ElsaManifest::resolver_from_manifest_parts(
+                            &release_key,
+                            url,
+                            id,
+                            format,
+                            restriction,
+                        )
+                    })
+                    .collect()
+            };
+
+        Ok(manifest
             .reads
             .into_iter()
             .map(|(id, reads_manifest)| {
-                ElsaManifest::resolver_from_manifest_parts(
-                    &release_key,
+                get_resolvers(
                     &reads_manifest.url,
                     &id,
                     reads_manifest.format.unwrap_or(Format::Bam),
+                    reads_manifest.restrictions,
                 )
             })
             .chain(
@@ -130,15 +155,18 @@ impl TryFrom<ElsaManifest> for Vec<Resolver> {
                     .variants
                     .into_iter()
                     .map(|(id, variants_manifest)| {
-                        ElsaManifest::resolver_from_manifest_parts(
-                            &release_key,
+                        get_resolvers(
                             &variants_manifest.url,
                             &id,
                             variants_manifest.format.unwrap_or(Format::Vcf),
+                            variants_manifest.restrictions,
                         )
                     }),
             )
-            .collect()
+            .collect::<Result<Vec<Vec<Resolver>>>>()?
+            .into_iter()
+            .flatten()
+            .collect())
     }
 }
 
@@ -278,7 +306,7 @@ mod tests {
     use serde_json::from_str;
 
     use crate::elsa_endpoint::{
-        ElsaEndpoint, ElsaLocation, ElsaManifest, ElsaResponse, CACHE_PATH,
+        ElsaEndpoint, ElsaLocation, ElsaManifest, ElsaResponse, ElsaRestrictionManifest, CACHE_PATH,
     };
     use crate::s3::S3;
     use crate::test_utils::{
@@ -432,6 +460,7 @@ mod tests {
             "s3://umccr-10g-data-dev/HG00097/HG00097.bam",
             "30F9F3FED8F711ED8C35DBEF59E9F537",
             Format::Bam,
+            &example_restrictions_manifest(),
         )
         .unwrap();
         assert!(is_resolver_from_parts(&response));
@@ -444,6 +473,7 @@ mod tests {
             "S3://umccr-10g-data-dev/HG00097/HG00097.bam",
             "30F9F3FED8F711ED8C35DBEF59E9F537",
             Format::Bam,
+            &example_restrictions_manifest(),
         )
         .unwrap();
         assert!(is_resolver_from_parts(&response));
@@ -456,6 +486,7 @@ mod tests {
             "s3://umccr-10g-data-dev/HG00097/HG00097",
             "30F9F3FED8F711ED8C35DBEF59E9F537",
             Format::Bam,
+            &example_restrictions_manifest(),
         )
         .unwrap();
         assert!(is_resolver_from_parts(&response));
@@ -468,6 +499,7 @@ mod tests {
             "gcp://umccr-10g-data-dev/HG00097/HG00097.bam",
             "30F9F3FED8F711ED8C35DBEF59E9F537",
             Format::Bam,
+            &example_restrictions_manifest(),
         );
         assert!(matches!(response, Err(UnsupportedManifestFeature(_))));
     }
@@ -479,6 +511,7 @@ mod tests {
             "s3://umccr-10g-data-dev",
             "30F9F3FED8F711ED8C35DBEF59E9F537",
             Format::Bam,
+            &example_restrictions_manifest(),
         );
         assert!(matches!(response, Err(InvalidManifest(_))));
     }
@@ -490,7 +523,16 @@ mod tests {
             "s3:///HG00097/HG00097.bam",
             "30F9F3FED8F711ED8C35DBEF59E9F537",
             Format::Bam,
+            &example_restrictions_manifest(),
         );
         assert!(matches!(response, Err(InvalidManifest(_))));
+    }
+
+    fn example_restrictions_manifest() -> ElsaRestrictionManifest {
+        ElsaRestrictionManifest {
+            chromosome: 1,
+            start: Some(1),
+            end: Some(10),
+        }
     }
 }

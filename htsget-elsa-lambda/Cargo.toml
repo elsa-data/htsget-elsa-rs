@@ -1,6 +1,7 @@
 [package]
 name = "htsget-elsa-lambda"
 authors = ["Marko Malenic <mmalenic1@gmail.com>"]
+description = "A lambda function for htsget-rs to communicate with Elsa"
 version = "0.1.0"
 edition = "2021"
 

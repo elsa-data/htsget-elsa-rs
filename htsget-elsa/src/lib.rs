@@ -36,15 +36,19 @@ pub enum Error {
     SystemError(String),
 }
 
+/// Cache resolver objects to a cache.
 #[async_trait]
 pub trait Cache {
     type Error;
     type Item;
 
+    /// Get the resolvers from the cache.
     async fn get<K: AsRef<str> + Send + Sync>(
         &self,
         key: K,
     ) -> result::Result<Option<Self::Item>, Self::Error>;
+
+    /// Put the resolvers in the cache.
     async fn put<K: AsRef<str> + Send + Sync>(
         &self,
         key: K,
@@ -53,10 +57,12 @@ pub trait Cache {
     ) -> result::Result<(), Self::Error>;
 }
 
+/// Get objects from cloud storage.
 #[async_trait]
 pub trait GetObject {
     type Error;
 
+    /// Get the object.
     async fn get_object<T: for<'de> Deserialize<'de>>(
         &self,
         bucket: impl Into<String> + Send,
@@ -64,9 +70,11 @@ pub trait GetObject {
     ) -> result::Result<T, Self::Error>;
 }
 
+/// Get resolvers from Elsa.
 #[async_trait]
 pub trait ResolversFromElsa {
     type Error;
 
+    /// Get the resolvers from Elsa using the release key.
     async fn try_get(&self, release_key: String) -> result::Result<Vec<Resolver>, Self::Error>;
 }

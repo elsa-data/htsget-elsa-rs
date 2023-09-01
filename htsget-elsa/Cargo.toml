@@ -1,6 +1,7 @@
 [package]
 name = "htsget-elsa"
 authors = ["Marko Malenic <mmalenic1@gmail.com>"]
+description = "The htsget-rs library code used to interact with Elsa"
 version = "0.1.0"
 edition = "2021"
 

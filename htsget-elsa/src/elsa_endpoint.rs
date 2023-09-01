@@ -170,6 +170,7 @@ impl TryFrom<ElsaManifest> for Vec<Resolver> {
     }
 }
 
+/// Implements the mechanism which fetches manifests from Elsa.
 #[derive(Debug)]
 pub struct ElsaEndpoint<'a, C, S> {
     endpoint: Authority,

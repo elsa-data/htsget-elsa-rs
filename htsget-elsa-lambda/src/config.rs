@@ -13,7 +13,7 @@ pub struct Config {
     htsget_config: HtsGetConfig,
     #[serde(with = "http_serde::authority")]
     elsa_endpoint_authority: Authority,
-    cache_location: String,
+    cache_location: Option<String>,
 }
 
 impl Config {
@@ -21,7 +21,7 @@ impl Config {
     pub fn new(
         htsget_config: HtsGetConfig,
         elsa_endpoint_authority: Authority,
-        cache_location: String,
+        cache_location: Option<String>,
     ) -> Self {
         Self {
             htsget_config,
@@ -41,8 +41,8 @@ impl Config {
     }
 
     /// Get the cache location.
-    pub fn cache_location(&self) -> &str {
-        &self.cache_location
+    pub fn cache_location(&self) -> Option<&str> {
+        self.cache_location.as_deref()
     }
 }
 

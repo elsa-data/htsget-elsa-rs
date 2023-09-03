@@ -17,7 +17,7 @@ use crate::{Cache, Error, GetObject, Result};
 #[derive(Debug)]
 pub struct S3 {
     s3_client: Client,
-    cache_bucket: String,
+    cache_bucket: Option<String>,
 }
 
 /// The shape of the item to cache.
@@ -29,7 +29,7 @@ pub struct CacheItem {
 
 impl S3 {
     /// Create a new S3 storage.
-    pub fn new(s3_client: Client, cache_bucket: String) -> Self {
+    pub fn new(s3_client: Client, cache_bucket: Option<String>) -> Self {
         Self {
             s3_client,
             cache_bucket,
@@ -37,7 +37,7 @@ impl S3 {
     }
 
     /// Create a new S3 storage with default AWS config.
-    pub async fn new_with_default_config(cache_bucket: String) -> Self {
+    pub async fn new_with_default_config(cache_bucket: Option<String>) -> Self {
         Self::new(
             Client::new(&aws_config::load_from_env().await),
             cache_bucket,
@@ -110,20 +110,19 @@ impl Cache for S3 {
     async fn get<K: AsRef<str> + Send + Sync>(&self, key: K) -> Result<Option<Self::Item>> {
         trace!(key = key.as_ref(), "getting key");
 
-        if let Some(last_modified) = self
-            .last_modified(self.cache_bucket.clone(), key.as_ref())
-            .await
-        {
-            let object: CacheItem = self
-                .get_object(self.cache_bucket.clone(), key.as_ref())
-                .await?;
+        if let Some(cache_bucket) = &self.cache_bucket {
+            if let Some(last_modified) = self.last_modified(cache_bucket, key.as_ref()).await {
+                let object: CacheItem = self.get_object(cache_bucket, key.as_ref()).await?;
 
-            if last_modified.as_nanos()
-                > DateTime::from(SystemTime::now().sub(Duration::from_secs(object.max_age)))
-                    .as_nanos()
-            {
-                return Ok(Some(object.item));
+                if last_modified.as_nanos()
+                    > DateTime::from(SystemTime::now().sub(Duration::from_secs(object.max_age)))
+                        .as_nanos()
+                {
+                    return Ok(Some(object.item));
+                }
             }
+        } else {
+            trace!("no caching bucket configured");
         }
 
         Ok(None)
@@ -138,22 +137,26 @@ impl Cache for S3 {
     ) -> Result<()> {
         trace!(key = key.as_ref(), "putting key");
 
-        self.s3_client
-            .put_object()
-            .bucket(self.cache_bucket.clone())
-            .key(key.as_ref())
-            .body(ByteStream::from(Bytes::from(
-                to_vec(&CacheItem { item, max_age })
-                    .map_err(|err| SerializeError(err.to_string()))?,
-            )))
-            .send()
-            .await
-            .map_err(|err| {
-                let err = err.into_service_error();
-                trace!(err = err.message(), "put object error");
+        if let Some(cache_bucket) = &self.cache_bucket {
+            self.s3_client
+                .put_object()
+                .bucket(cache_bucket)
+                .key(key.as_ref())
+                .body(ByteStream::from(Bytes::from(
+                    to_vec(&CacheItem { item, max_age })
+                        .map_err(|err| SerializeError(err.to_string()))?,
+                )))
+                .send()
+                .await
+                .map_err(|err| {
+                    let err = err.into_service_error();
+                    trace!(err = err.message(), "put object error");
 
-                PutObjectError(err.to_string())
-            })?;
+                    PutObjectError(err.to_string())
+                })?;
+        } else {
+            trace!("no caching bucket configured");
+        }
 
         Ok(())
     }
@@ -174,7 +177,7 @@ mod tests {
     async fn last_modified() {
         with_test_mocks(
             |_, s3_client, _, base_path| async move {
-                let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+                let s3 = S3::new(s3_client, Some("elsa-data-tmp".to_string()));
 
                 let manifest_path = base_path.join("elsa-data-tmp/htsget-manifests");
                 write_example_manifest(&manifest_path);
@@ -193,7 +196,7 @@ mod tests {
     async fn last_modified_not_found() {
         with_test_mocks(
             |_, s3_client, _, base_path| async move {
-                let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+                let s3 = S3::new(s3_client, Some("elsa-data-tmp".to_string()));
 
                 let manifest_path = base_path.join("elsa-data-tmp/htsget-manifests");
                 write_example_manifest(&manifest_path);
@@ -212,7 +215,7 @@ mod tests {
     async fn get_object() {
         with_test_mocks(
             |_, s3_client, _, base_path| async move {
-                let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+                let s3 = S3::new(s3_client, Some("elsa-data-tmp".to_string()));
 
                 let manifest_path = base_path.join("elsa-data-tmp/htsget-manifests");
                 write_example_manifest(&manifest_path);
@@ -232,7 +235,7 @@ mod tests {
     async fn get_object_not_found() {
         with_test_mocks(
             |_, s3_client, _, base_path| async move {
-                let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+                let s3 = S3::new(s3_client, Some("elsa-data-tmp".to_string()));
 
                 let manifest_path = base_path.join("elsa-data-tmp/htsget-manifests");
                 write_example_manifest(&manifest_path);
@@ -251,7 +254,7 @@ mod tests {
     async fn get_not_found() {
         with_test_mocks(
             |_, s3_client, _, base_path| async move {
-                let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+                let s3 = S3::new(s3_client, Some("elsa-data-tmp".to_string()));
 
                 let manifest_path = base_path.join("elsa-data-tmp/htsget-manifests");
                 fs::create_dir_all(&manifest_path).unwrap();
@@ -277,7 +280,7 @@ mod tests {
     async fn get_cache_expired() {
         with_test_mocks(
             |_, s3_client, _, base_path| async move {
-                let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+                let s3 = S3::new(s3_client, Some("elsa-data-tmp".to_string()));
 
                 let manifest_path = base_path.join("elsa-data-tmp/htsget-manifests");
                 fs::create_dir_all(&manifest_path).unwrap();
@@ -303,7 +306,7 @@ mod tests {
     async fn get() {
         with_test_mocks(
             |_, s3_client, _, base_path| async move {
-                let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+                let s3 = S3::new(s3_client, Some("elsa-data-tmp".to_string()));
 
                 let manifest_path = base_path.join("elsa-data-tmp/htsget-manifests");
                 fs::create_dir_all(&manifest_path).unwrap();
@@ -329,7 +332,7 @@ mod tests {
     async fn put() {
         with_test_mocks(
             |_, s3_client, _, base_path| async move {
-                let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+                let s3 = S3::new(s3_client, Some("elsa-data-tmp".to_string()));
 
                 let manifest_path = base_path.join("elsa-data-tmp");
                 fs::create_dir_all(&manifest_path).unwrap();

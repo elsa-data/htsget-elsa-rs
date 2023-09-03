@@ -331,7 +331,7 @@ mod tests {
     async fn get_response() {
         with_test_mocks(
             |endpoint, s3_client, reqwest_client, _| async move {
-                let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+                let s3 = S3::new(s3_client, Some("elsa-data-tmp".to_string()));
                 let endpoint = ElsaEndpoint::new_with_client(
                     reqwest_client,
                     Authority::from_str(&endpoint).unwrap(),
@@ -361,7 +361,7 @@ mod tests {
     async fn get_manifest() {
         with_test_mocks(
             |endpoint, s3_client, reqwest_client, _| async move {
-                let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+                let s3 = S3::new(s3_client, Some("elsa-data-tmp".to_string()));
                 let endpoint = ElsaEndpoint::new_with_client(
                     reqwest_client,
                     Authority::from_str(&endpoint).unwrap(),
@@ -384,7 +384,7 @@ mod tests {
     async fn get_manifest_not_present() {
         with_test_mocks(
             |endpoint, s3_client, reqwest_client, _| async move {
-                let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+                let s3 = S3::new(s3_client, Some("elsa-data-tmp".to_string()));
                 let endpoint = ElsaEndpoint::new_with_client(
                     reqwest_client,
                     Authority::from_str(&endpoint).unwrap(),
@@ -408,7 +408,7 @@ mod tests {
     async fn try_get_cached() {
         with_test_mocks(
             |endpoint, s3_client, reqwest_client, _| async move {
-                let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+                let s3 = S3::new(s3_client, Some("elsa-data-tmp".to_string()));
                 let endpoint = ElsaEndpoint::new_with_client(
                     reqwest_client,
                     Authority::from_str(&endpoint).unwrap(),
@@ -433,7 +433,7 @@ mod tests {
     async fn try_get_not_cached() {
         with_test_mocks(
             |endpoint, s3_client, reqwest_client, base_path| async move {
-                let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+                let s3 = S3::new(s3_client, Some("elsa-data-tmp".to_string()));
                 let endpoint = ElsaEndpoint::new_with_client(
                     reqwest_client,
                     Authority::from_str(&endpoint).unwrap(),

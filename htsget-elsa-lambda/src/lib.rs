@@ -24,7 +24,9 @@ pub async fn handle_request(config: Config) -> Result<(), Error> {
 
             match Route::try_from(&event) {
                 Ok(route) => {
-                    let s3 = S3::new_with_default_config(config.cache_location().to_string()).await;
+                    let s3 =
+                        S3::new_with_default_config(config.cache_location().map(str::to_string))
+                            .await;
                     let elsa_endpoint =
                         match ElsaEndpoint::new(config.elsa_endpoint_authority().clone(), &s3, &s3)
                         {
@@ -116,10 +118,10 @@ mod tests {
                 let config = Config::new(
                     default_test_config(),
                     Authority::from_str(&endpoint).unwrap(),
-                    "cache".to_string(),
+                    Some("cache".to_string()),
                 );
 
-                let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+                let s3 = S3::new(s3_client, Some("elsa-data-tmp".to_string()));
                 let endpoint = ElsaEndpoint::new_with_client(
                     reqwest_client,
                     config.elsa_endpoint_authority().clone(),
@@ -145,10 +147,10 @@ mod tests {
                 let config = Config::new(
                     default_test_config(),
                     Authority::from_str(&endpoint).unwrap(),
-                    "cache".to_string(),
+                    Some("cache".to_string()),
                 );
 
-                let s3 = S3::new(s3_client, "elsa-data-tmp".to_string());
+                let s3 = S3::new(s3_client, Some("elsa-data-tmp".to_string()));
                 let endpoint = ElsaEndpoint::new_with_client(
                     reqwest_client,
                     config.elsa_endpoint_authority().clone(),

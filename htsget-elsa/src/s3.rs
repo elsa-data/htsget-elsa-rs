@@ -13,12 +13,14 @@ use tracing::{instrument, trace};
 use crate::Error::{DeserializeError, GetObjectError, PutObjectError, SerializeError};
 use crate::{Cache, Error, GetObject, Result};
 
+/// S3 storage implementation.
 #[derive(Debug)]
 pub struct S3 {
     s3_client: Client,
     cache_bucket: String,
 }
 
+/// The shape of the item to cache.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct CacheItem {
     item: Vec<Resolver>,
@@ -26,6 +28,7 @@ pub struct CacheItem {
 }
 
 impl S3 {
+    /// Create a new S3 storage.
     pub fn new(s3_client: Client, cache_bucket: String) -> Self {
         Self {
             s3_client,
@@ -33,6 +36,7 @@ impl S3 {
         }
     }
 
+    /// Create a new S3 storage with default AWS config.
     pub async fn new_with_default_config(cache_bucket: String) -> Self {
         Self::new(
             Client::new(&aws_config::load_from_env().await),
@@ -43,6 +47,7 @@ impl S3 {
 
 impl S3 {
     /// Get the last modified date of the object.
+    #[instrument(level = "trace", skip_all)]
     async fn last_modified(
         &self,
         bucket: impl Into<String> + Send,
@@ -58,6 +63,8 @@ impl S3 {
             .and_then(|output| output.last_modified)
     }
 
+    /// Execute a get object request.
+    #[instrument(level = "trace", skip_all)]
     async fn get_object<T: for<'de> Deserialize<'de>>(
         &self,
         bucket: impl Into<String> + Send,

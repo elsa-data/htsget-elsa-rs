@@ -15,6 +15,7 @@ use crate::config::Config;
 
 pub mod config;
 
+/// The request handler.
 pub async fn handle_request(config: Config) -> Result<(), Error> {
     handle_request_service_fn(
         config.htsget_config().ticket_server().cors().clone(),
@@ -44,6 +45,7 @@ pub async fn handle_request(config: Config) -> Result<(), Error> {
     .await
 }
 
+/// Route the request with the Elsa endpoint.
 pub async fn route_request<'a>(
     config: &Config,
     event: Request,
@@ -59,6 +61,8 @@ pub async fn route_request<'a>(
     router.route_request_with_route(event, route).await
 }
 
+/// Get the resolvers for this route. First tries htsget-elsa, then falls back to the
+/// standard htsget-rs resolvers.
 #[instrument(level = "debug", skip(elsa_endpoint), ret)]
 pub async fn get_resolvers<'a, C, S>(
     config: &Config,

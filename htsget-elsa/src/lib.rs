@@ -12,6 +12,7 @@ pub mod test_utils;
 
 pub type Result<T> = result::Result<T, Error>;
 
+/// Main error type for this crate.
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("invalid client: `{0}`")]

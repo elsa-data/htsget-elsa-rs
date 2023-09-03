@@ -13,6 +13,7 @@ use htsget_test::aws_mocks::with_s3_test_server_tmp;
 use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, Request, ResponseTemplate, Times};
 
+/// An example Elsa manifest file.
 pub fn example_elsa_manifest() -> String {
     r#"
         {
@@ -106,7 +107,8 @@ pub fn example_elsa_manifest() -> String {
     .to_string()
 }
 
-pub(crate) fn example_elsa_response() -> String {
+/// An example GET response from Elsa.
+pub fn example_elsa_response() -> String {
     r#"
         {
             "location": {
@@ -119,11 +121,13 @@ pub(crate) fn example_elsa_response() -> String {
     .to_string()
 }
 
+/// Writes the example manifest to the path.
 pub fn write_example_manifest(manifest_path: &Path) {
     fs::create_dir_all(manifest_path).unwrap();
     fs::write(manifest_path.join("R004"), example_elsa_manifest()).unwrap();
 }
 
+/// Runs a test with a mock Elsa server that accepts GET requests for the htsget manifest.
 pub async fn with_test_mocks<T, F, Fut>(test: F, expect_times: T)
 where
     T: Into<Times>,
@@ -159,7 +163,8 @@ where
     .await;
 }
 
-pub fn is_resolver_from_parts(resolver: &Resolver) -> bool {
+/// Check if the resolver correctly matches the 30F9F3FED8F711ED8C35DBEF59E9F537 reads example.
+pub fn is_reads_resolver_from_parts(resolver: &Resolver) -> bool {
     resolver.regex().to_string() == "^R004/30F9F3FED8F711ED8C35DBEF59E9F537$"
         && resolver.substitution_string() == "HG00097/HG00097"
         && matches!(resolver.storage(), storage::Storage::S3 { s3_storage } if s3_storage.bucket() == "umccr-10g-data-dev")
@@ -168,6 +173,7 @@ pub fn is_resolver_from_parts(resolver: &Resolver) -> bool {
         && resolver.allow_interval() == Interval::new(Some(1), Some(10))
 }
 
+/// Check if the resolvers correct match the whole example manifest.
 pub fn is_manifest_resolvers(resolvers: Vec<Resolver>) -> bool {
     resolvers.iter().any(|resolver| {
         resolver.regex().to_string() == "^R004/30F9FFD4D8F711ED8C353BBCB8861211$" &&
@@ -177,7 +183,7 @@ pub fn is_manifest_resolvers(resolvers: Vec<Resolver>) -> bool {
             && resolver.allow_reference_names() == &List(HashSet::from_iter(vec!["2".to_string()]))
             && resolver.allow_interval() == Interval::new(None, Some(10))
     }) &&
-    resolvers.iter().any(is_resolver_from_parts) &&
+    resolvers.iter().any(is_reads_resolver_from_parts) &&
     resolvers.iter().any(|resolver| {
         resolver.regex().to_string() == "^R004/30F9FFD4D8F711ED8C353BBCB8861211$" &&
             resolver.substitution_string() == "HG00096/HG00096.hard-filtered" &&

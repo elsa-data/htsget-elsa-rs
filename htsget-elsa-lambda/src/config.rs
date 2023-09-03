@@ -5,8 +5,8 @@ use htsget_config::config::parser::from_path;
 use htsget_config::config::Config as HtsGetConfig;
 use http::uri::Authority;
 use serde::{Deserialize, Serialize};
-use tracing::instrument;
 
+/// Configuration for htsget-elsa. Includes the standard HtsGetConfig.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Config {
     #[serde(flatten, default)]
@@ -17,6 +17,7 @@ pub struct Config {
 }
 
 impl Config {
+    /// Create a new config.
     pub fn new(
         htsget_config: HtsGetConfig,
         elsa_endpoint_authority: Authority,
@@ -29,20 +30,26 @@ impl Config {
         }
     }
 
+    /// Get the standard htsget config.
     pub fn htsget_config(&self) -> &HtsGetConfig {
         &self.htsget_config
     }
 
+    /// Get the endpoint authority.
     pub fn elsa_endpoint_authority(&self) -> &Authority {
         &self.elsa_endpoint_authority
     }
 
+    /// Get the cache location.
     pub fn cache_location(&self) -> &str {
         &self.cache_location
     }
+}
 
-    #[instrument(level = "debug", ret)]
-    pub fn from_path(path: &Path) -> io::Result<Self> {
+impl TryFrom<&Path> for Config {
+    type Error = io::Error;
+
+    fn try_from(path: &Path) -> io::Result<Self> {
         from_path(path)
     }
 }

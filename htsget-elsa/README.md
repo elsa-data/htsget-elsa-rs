@@ -59,17 +59,17 @@ Elsa and htsget-rs interact in the following way:
 
 ## Layout
 
-This crate has a few components which form the basis of the htsget-rs and Elsa interaction:
-* The `GetObject` trait is used by htsget-elsa to get request to cloud storage. For now this is only S3, but it could be
-  extend to other cloud providers.
-* The `Cache` trait is used to cache the resolvers once they have been processed. This only caches back to S3, but it 
+This crate has a few components implement the htsget-rs and Elsa interaction:
+* The `GetObject` trait is used by htsget-elsa to request data from cloud storage. For now this is only S3, but it could be
+  extended to other cloud providers.
+* The `Cache` trait is used to cache the resolvers once they have been processed. This only caches back to S3, but it could
   also use other mechanisms, including databases such as DynamoDB.
 * The `ResolversFromElsa` represents the whole mechanism as described above, and is implemented by the `ElsaEndpoint` struct.
 
 #### Feature flags
 
 This crate has the following features:
-* `test-utils`: used to enable test dependencies.
+* `test-utils`: used to enable test dependencies and functions.
 
 ## License
 

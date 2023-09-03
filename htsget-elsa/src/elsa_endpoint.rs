@@ -19,6 +19,7 @@ use crate::{Cache, Error, GetObject, ResolversFromElsa, Result};
 pub const ENDPOINT_PATH: &str = "/api/manifest/htsget";
 pub const CACHE_PATH: &str = "htsget-manifest-cache";
 
+/// The location of the manifest.
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ElsaLocation {
@@ -26,6 +27,7 @@ pub struct ElsaLocation {
     key: String,
 }
 
+/// Defines the response that htsget-elsa expects from Elsa when requesting the manifest.
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ElsaResponse {
@@ -33,6 +35,7 @@ pub struct ElsaResponse {
     max_age: u64,
 }
 
+/// The format of reads in the manifest.
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ElsaReadsManifest {
@@ -41,6 +44,7 @@ pub struct ElsaReadsManifest {
     restrictions: Vec<ElsaRestrictionManifest>,
 }
 
+/// The format of variants in the manifest.
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ElsaVariantsManifest {
@@ -50,6 +54,7 @@ pub struct ElsaVariantsManifest {
     restrictions: Vec<ElsaRestrictionManifest>,
 }
 
+/// The format of the restrictions in the manifest.
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ElsaRestrictionManifest {
@@ -58,6 +63,7 @@ pub struct ElsaRestrictionManifest {
     end: Option<u32>,
 }
 
+/// This defines the manifest format that htsget-elsa expects from Elsa.
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ElsaManifest {
@@ -68,6 +74,7 @@ pub struct ElsaManifest {
 }
 
 impl ElsaManifest {
+    /// Creates a resolver from the different parts of the manifest.
     #[instrument(level = "trace", ret)]
     pub fn resolver_from_manifest_parts(
         release_key: &str,
@@ -170,7 +177,7 @@ impl TryFrom<ElsaManifest> for Vec<Resolver> {
     }
 }
 
-/// Implements the mechanism which fetches manifests from Elsa.
+/// Implements fetching manifests from Elsa.
 #[derive(Debug)]
 pub struct ElsaEndpoint<'a, C, S> {
     endpoint: Authority,
@@ -217,6 +224,7 @@ where
     C: Cache<Item = Vec<Resolver>, Error = Error>,
     S: GetObject<Error = Error>,
 {
+    /// Create an ElsaEndpoint.
     pub fn new(endpoint: Authority, cache: &'a C, get_object: &'a S) -> Result<Self> {
         Ok(Self {
             client: Self::create_client()?,
@@ -227,6 +235,7 @@ where
         })
     }
 
+    /// Create an ElsaEndpoint with a client. Used for testing where TLS is not required.
     #[cfg(feature = "test-utils")]
     pub fn new_with_client(
         client: Client,
@@ -283,13 +292,14 @@ where
         }
     }
 
+    /// Call the Elsa endpoint and get the response.
     #[instrument(level = "debug", skip(self), ret)]
     pub async fn get_response(&self, release_key: &str) -> Result<ElsaResponse> {
         self.get_response_with_scheme(release_key, self.scheme)
             .await
     }
 
-    #[instrument(level = "debug", skip(self), ret)]
+    /// Convert a response to a manifest by fetching it from the storage.
     pub async fn get_manifest(&self, response: ElsaResponse) -> Result<ElsaManifest> {
         self.get_object
             .get_object(response.location.bucket, response.location.key)
@@ -312,7 +322,7 @@ mod tests {
     use crate::s3::S3;
     use crate::test_utils::{
         example_elsa_manifest, example_elsa_response, is_manifest_resolvers,
-        is_resolver_from_parts, with_test_mocks,
+        is_reads_resolver_from_parts, with_test_mocks,
     };
     use crate::Error::{GetObjectError, InvalidManifest, UnsupportedManifestFeature};
     use crate::{Cache, ResolversFromElsa};
@@ -464,7 +474,7 @@ mod tests {
             &example_restrictions_manifest(),
         )
         .unwrap();
-        assert!(is_resolver_from_parts(&response));
+        assert!(is_reads_resolver_from_parts(&response));
     }
 
     #[test]
@@ -477,7 +487,7 @@ mod tests {
             &example_restrictions_manifest(),
         )
         .unwrap();
-        assert!(is_resolver_from_parts(&response));
+        assert!(is_reads_resolver_from_parts(&response));
     }
 
     #[test]
@@ -490,7 +500,7 @@ mod tests {
             &example_restrictions_manifest(),
         )
         .unwrap();
-        assert!(is_resolver_from_parts(&response));
+        assert!(is_reads_resolver_from_parts(&response));
     }
 
     #[test]

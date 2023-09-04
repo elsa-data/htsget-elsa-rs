@@ -1,0 +1,25 @@
+[package]
+name = "htsget-elsa-lambda"
+authors = ["Marko Malenic <mmalenic1@gmail.com>"]
+description = "A lambda function for htsget-rs to communicate with Elsa"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.25", features = ["macros", "rt-multi-thread"] }
+lambda_http = { version = "0.7" }
+serde = { version = "1.0" }
+serde_json = "1.0"
+tracing = "0.1"
+http-serde = "1.1"
+http = "0.2"
+
+htsget-config = { git = "https://github.com/umccr/htsget-rs.git", branch = "feat/htsget-elsa" }
+htsget-lambda = { git = "https://github.com/umccr/htsget-rs.git", branch = "feat/htsget-elsa" }
+
+htsget-elsa = { version = "0.1", path = "../htsget-elsa" }
+
+[dev-dependencies]
+htsget-elsa = { version = "0.1", path = "../htsget-elsa", features = ["test-utils"] }
+htsget-search = { git = "https://github.com/umccr/htsget-rs.git", branch = "feat/htsget-elsa" }
+htsget-test = { git = "https://github.com/umccr/htsget-rs.git", branch = "feat/htsget-elsa", default-features = false, features = ["http-tests"] }

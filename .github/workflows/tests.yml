@@ -1,0 +1,45 @@
+name: tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        rust: [stable]
+        os: [ubuntu-latest]
+    steps:
+      - name: Check out
+        uses: actions/checkout@v3
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        id: toolchain
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: rustfmt, clippy
+      - run: rustup override set ${{ steps.toolchain.outputs.name }}
+      - name: Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: build-cache
+          save-if: false
+      - name: Cargo fmt
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
+      - name: Cargo clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --all-targets --all-features  -- -D warnings
+      - name: Run cargo tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --all-features

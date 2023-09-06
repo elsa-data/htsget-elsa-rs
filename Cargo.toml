@@ -5,3 +5,7 @@ members = [
     "htsget-elsa",
     "htsget-elsa-lambda"
 ]
+
+[workspace.package]
+license = "MIT"
+edition = "2021"

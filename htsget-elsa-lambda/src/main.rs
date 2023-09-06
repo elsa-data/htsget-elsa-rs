@@ -7,10 +7,10 @@ use htsget_elsa_lambda::handle_request;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    HtsgetConfig::setup_tracing()?;
-
     if let Some(path) = HtsgetConfig::parse_args() {
         let config: Config = from_path(&path)?;
+
+        config.htsget_config().setup_tracing()?;
 
         handle_request(config).await
     } else {

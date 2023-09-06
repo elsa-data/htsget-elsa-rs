@@ -18,7 +18,15 @@ repos:
     rev: v1.4.0
     hooks:
       - id: detect-secrets
-        args: ["--baseline", ".secrets.baseline"]
+        args:
+          [
+            "--baseline",
+            ".secrets.baseline",
+            "--exclude-secrets",
+            "30F9F3FED8F711ED8C35DBEF59E9F537",
+            "--exclude-secrets",
+            "30F9FFD4D8F711ED8C353BBCB8861211",
+          ]
         exclude: package.lock.json
 
   - repo: https://github.com/doublify/pre-commit-rust

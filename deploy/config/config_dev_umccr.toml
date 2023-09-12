@@ -1,5 +1,5 @@
 elsa_endpoint_authority = "elsa-data.dev.umccr.org"
-cache_location = "elsadatalocaldevtestinfr-tempprivatebucket3b80855-p9qoue91haoy"
+cache_location = "elsadatadevinfrastructur-tempprivatebucket3b80855-8hhal0fyrr7r"
 
 ticket_server_cors_allow_headers = "All"
 ticket_server_cors_allow_origins = [

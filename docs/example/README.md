@@ -49,6 +49,32 @@ The following shows how to demonstrate htsget-elsa returning queries based on El
      }
    }
    ```
+5. Query for a disallowed chromosome:
+   ```bash
+   curl -H "Authorization: ${JWT_TOKEN}" "https://htsget-elsa.dev.umccr.org/reads/R001/8AE43A8E4C8111EE84492BBD28BC6E2F?referenceName=19"
+   ```
+   Response:
+   ```json
+   {
+     "htsget": {
+       "error": "NotFound",
+       "message": "failed to match query with storage"
+     }
+   }
+   ```
+6. Even if some of the start and end regions are allowed, all regions must be allowed for a response to be returned (e.g. start is allowed, but end is not):
+   ```bash
+   curl -H "Authorization: ${JWT_TOKEN}" "https://htsget-elsa.dev.umccr.org/reads/R001/8AE43A8E4C8111EE84492BBD28BC6E2F?referenceName=20&start=50888919&end=51000000"
+   ```
+   Response:
+   ```json
+   {
+     "htsget": {
+       "error": "NotFound",
+       "message": "failed to match query with storage"
+     }
+   }
+   ```
    
 ### Sharing with htsget not enabled in Elsa
 1. Grab the JWT token from the data portal:

@@ -108,7 +108,7 @@ impl ElsaManifest {
 
         Resolver::new(
             Storage::S3 {
-                s3_storage: S3Storage::new(bucket.to_string()),
+                s3_storage: S3Storage::new(bucket.to_string(), None, false),
             },
             &format!("^{}/{}$", release_key, id),
             &key,

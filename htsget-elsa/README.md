@@ -35,7 +35,7 @@ Elsa and htsget-rs interact in the following way:
 {
   "id": "R001",
   "reads": {
-    "C618CDEE119511EE8A2DFFDE5D69679D": {
+    "id": {
       "url": "s3://url/to/file.bam",
       "restrictions": [
         { "chromosome": 1, "start": 0, "end": 1000 }
@@ -43,7 +43,7 @@ Elsa and htsget-rs interact in the following way:
     }
   },
   "variants": {
-    "C618CDEE119511EE8A2DFFDE5D69679D": {
+    "id": {
       "url": "s3://url/to/file.vcf.gz",
       "variantSampleId": "",
       "restrictions": [

@@ -2,6 +2,21 @@
 
 The following shows how to demonstrate htsget-elsa returning queries based on Elsa manifests.
 
+The url path components for the htsget query determine which release key is used to fetch the manifest, and the file id
+to query (which is defined in the manifest). For example, consider a htsget query such as: 
+
+`GET https://htsget-elsa.dev.umccr.org/reads/R001/8AE43A8E4C8111EE84492BBD28BC6E2F?referenceName=20&start=50888919&end=50931436`
+
+Here the release key is `R001` and the file id - which is obtained from the manifest - is `8AE43A8E4C8111EE84492BBD28BC6E2F`.
+In general, qeuries using htsget-elsa take the following form: 
+
+`GET https://<htsget_domain>/reads/<release_key>/<file_id>?<query_params>`
+
+The release keys and ids for querying can be obtained from Elsa. When defining region restrictions, the allowed regions
+are enabled in Elsa, and are obtained from https://panelapp.agha.umccr.org.
+
+The following shows some example queries:
+
 ### Sharing with htsget enabled in Elsa
 1. Enable the htsget sharing on a release with some restrictions.
 2. Grab the JWT token from the data portal:

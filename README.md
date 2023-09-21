@@ -29,8 +29,16 @@ See the READMEs of these crates for more details:
 * [htsget-elsa-lambda][htsget-elsa-lambda]: A Lambda function which enables htsget-elsa functionality.
 * [htsget-elsa][htsget-elsa]: The library code which implements the htsget-rs and Elsa interaction.
 
+For an example of querying htsget-elsa and an architecture diagram, see the [docs][docs] directory:
+* [example][example]: An example of querying htsget-elsa.
+* [architecture][architecture]: An architecture diagram of htsget-elsa:
+![architecture](./docs/diagrams/Architecture.drawio.svg)
+
 [htsget-elsa-lambda]: htsget-elsa-lambda
 [htsget-elsa]: htsget-elsa
+[docs]: docs
+[example]: docs/example/README.md
+[architecture]: docs/diagrams/Architecture.drawio.svg
 
 ## License
 

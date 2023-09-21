@@ -55,10 +55,7 @@ pub async fn route_request<'a>(
     elsa_endpoint: &ElsaEndpoint<'a, S3, S3>,
 ) -> http::Result<Response<Body>> {
     let resolver = get_resolvers(config, &route, elsa_endpoint).await?;
-    let router = Router::new(
-        Arc::new(resolver),
-        config.htsget_config().ticket_server().service_info(),
-    );
+    let router = Router::new(Arc::new(resolver), config.htsget_config().service_info());
 
     router.route_request_with_route(event, route).await
 }

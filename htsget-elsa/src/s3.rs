@@ -2,7 +2,7 @@ use std::ops::Sub;
 use std::time::{Duration, SystemTime};
 
 use async_trait::async_trait;
-use aws_sdk_s3::types::{ByteStream, DateTime};
+use aws_sdk_s3::primitives::{ByteStream, DateTime};
 use aws_sdk_s3::Client;
 use bytes::Bytes;
 use htsget_config::resolver::Resolver;
@@ -149,10 +149,10 @@ impl Cache for S3 {
                 .send()
                 .await
                 .map_err(|err| {
-                    let err = err.into_service_error();
-                    trace!(err = err.message(), "put object error");
+                    let err = err.into_service_error().to_string();
+                    trace!(err = err, "put object error");
 
-                    PutObjectError(err.to_string())
+                    PutObjectError(err)
                 })?;
         } else {
             trace!("no caching bucket configured");
